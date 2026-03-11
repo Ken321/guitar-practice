@@ -1,0 +1,133 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --theme-color: #16160e;
+  --theme-color-muted: #7f7a68;
+  --theme-color-soft: #f4f2eb;
+  --theme-color-soft-strong: #ece8dc;
+  --theme-color-border: #d7d1c0;
+  --theme-color-contrast: #ffffff;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  background-color: #f5f5f5;
+  color: #333;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+a {
+  color: var(--theme-color);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+button {
+  cursor: pointer;
+  font-family: inherit;
+}
+
+input, textarea, select {
+  font-family: inherit;
+}
+
+.chord-line__pretext {
+  display: inline-block;
+  padding-top: 100px;
+}
+
+@media (max-width: 768px) {
+  .chord-sheet-toolbar {
+    padding: 12px !important;
+  }
+
+  .chord-sheet-title {
+    min-width: 0 !important;
+    width: 100%;
+  }
+
+  .chord-sheet-controls {
+    width: 100%;
+    align-items: stretch !important;
+  }
+
+  .chord-sheet-source {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .section-view {
+    padding: 12px !important;
+  }
+
+  .section-view__lines {
+    overflow-x: visible !important;
+  }
+
+  .chord-line--with-chords {
+    flex-wrap: wrap !important;
+    align-items: flex-start !important;
+    justify-content: flex-start;
+    column-gap: 8px;
+    row-gap: 16px;
+  }
+
+  .chord-line__segment {
+    min-width: 80px !important;
+    width: fit-content;
+    max-width: 100%;
+    flex: 0 1 auto !important;
+  }
+
+  .chord-line__pretext,
+  .chord-line__lyrics {
+    white-space: pre-wrap !important;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    letter-spacing: 0.2em !important;
+    font-size: 15px !important;
+    line-height: 1.6 !important;
+  }
+
+  .chord-line__lyrics {
+    padding-left: 12px !important;
+  }
+
+  .chord-line__pretext {
+    padding-top: 75px;
+  }
+
+  .chord-line__lyrics--plain {
+    padding-left: 0 !important;
+  }
+
+  .chord-diagram-container--compact {
+    width: 60px !important;
+    height: 75px !important;
+  }
+
+  .song-editor-meta-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .song-editor-line-input {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+
+  .song-editor-footer {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+}

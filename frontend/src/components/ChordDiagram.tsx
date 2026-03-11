@@ -1,0 +1,292 @@
+import { memo, useEffect, useRef, useState } from 'react'
+import { SVGuitarChord, ChordStyle } from 'svguitar'
+import { ChordPosition, resolveChordVoicings } from '../utils/chordVoicings'
+
+interface ChordDiagramProps {
+  chordName: string
+  displayName?: string
+  voicingIndex: number
+  onVoicingChange: (index: number) => void
+  compact?: boolean
+  onExploreMore?: () => void
+}
+
+function inferBarres(position: ChordPosition) {
+  const numStrings = position.frets.length
+  const candidateFrets = Array.from(new Set((position.barres ?? []).filter((fret) => fret > 0))).sort((a, b) => a - b)
+
+  return candidateFrets.map((barreFret) => {
+    const matchingIndexes = position.frets
+      .map((fret, stringIndex) => fret === barreFret ? stringIndex : -1)
+      .filter((stringIndex) => stringIndex >= 0)
+
+    if (matchingIndexes.length < 2) return null
+
+    let start = Math.min(...matchingIndexes)
+    let end = Math.max(...matchingIndexes)
+
+    for (let i = start; i <= end; i += 1) {
+      if (position.frets[i] <= 0 || position.frets[i] < barreFret) {
+        return null
+      }
+    }
+
+    while (start > 0 && position.frets[start - 1] > 0 && position.frets[start - 1] >= barreFret) {
+      start -= 1
+    }
+    while (end < position.frets.length - 1 && position.frets[end + 1] > 0 && position.frets[end + 1] >= barreFret) {
+      end += 1
+    }
+
+    return {
+      fret: barreFret,
+      fromString: numStrings - start,
+      toString: numStrings - end,
+    }
+  }).filter((value): value is { fret: number; fromString: number; toString: number } => value !== null)
+}
+
+export function renderChordDiagram(container: HTMLElement, position: ChordPosition, chordName: string, compact = false, displayName?: string) {
+  container.innerHTML = ''
+
+  const chart = new SVGuitarChord(container)
+
+  const fingers: [number, number][] = []
+  const numStrings = position.frets.length
+
+  position.frets.forEach((fret, stringIndex) => {
+    const svgString = numStrings - stringIndex
+
+    if (fret > 0) {
+      fingers.push([svgString, fret])
+    }
+  })
+
+  const barres = inferBarres(position)
+
+  chart
+    .configure({
+      strings: 6,
+      frets: 5,
+      position: position.baseFret || 1,
+      tuning: [],
+      style: ChordStyle.normal,
+      strokeWidth: compact ? 1.5 : 2,
+      fingerSize: 0.35,
+      fingerTextSize: compact ? 16 : 22,
+      color: '#333',
+      emptyStringIndicatorSize: 0.6,
+      title: displayName ?? chordName,
+      titleFontSize: compact ? 56 : 48,
+      fontFamily: 'Arial, sans-serif',
+    })
+    .chord({
+      fingers,
+      barres,
+    })
+    .draw()
+}
+
+export function StaticChordDiagram({
+  chordName,
+  displayName,
+  position,
+  compact = false,
+}: {
+  chordName: string
+  displayName?: string
+  position: ChordPosition
+  compact?: boolean
+}) {
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!containerRef.current) return
+    renderChordDiagram(containerRef.current, position, chordName, compact, displayName)
+  }, [position, chordName, compact, displayName])
+
+  return (
+    <div
+      ref={containerRef}
+      className={compact ? 'chord-diagram-container chord-diagram-container--compact' : 'chord-diagram-container'}
+      style={{ width: compact ? '80px' : '160px', height: compact ? '100px' : '200px' }}
+    />
+  )
+}
+
+function ChordDiagram({ chordName, displayName, voicingIndex, onVoicingChange, compact = false, onExploreMore }: ChordDiagramProps) {
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [positions, setPositions] = useState<ChordPosition[]>([])
+  const [maxResults, setMaxResults] = useState(compact ? 6 : 16)
+  const [maxFret, setMaxFret] = useState(18)
+  const [isVisible, setIsVisible] = useState(!compact)
+
+  useEffect(() => {
+    if (!compact) {
+      setIsVisible(true)
+      return
+    }
+
+    const node = wrapperRef.current
+    if (!node || isVisible) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setIsVisible(true)
+          observer.disconnect()
+        }
+      },
+      { rootMargin: '240px' },
+    )
+
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [compact, isVisible])
+
+  useEffect(() => {
+    if (!isVisible) return
+
+    const requestedResults = Math.max(maxResults, voicingIndex + 1)
+    const pos = resolveChordVoicings(chordName, { maxResults: requestedResults, maxFret, maxSpan: 5 })
+    setPositions(pos)
+  }, [chordName, isVisible, maxResults, maxFret, voicingIndex])
+
+  useEffect(() => {
+    setMaxResults(compact ? 6 : 16)
+    setMaxFret(18)
+  }, [chordName, compact])
+
+  useEffect(() => {
+    if (!isVisible) return
+    if (!containerRef.current || positions.length === 0) return
+
+    const safeIndex = Math.min(voicingIndex, positions.length - 1)
+    const position = positions[safeIndex]
+
+    if (position) {
+      renderChordDiagram(containerRef.current, position, chordName, compact, displayName)
+    }
+  }, [chordName, displayName, voicingIndex, positions, compact, isVisible])
+
+  useEffect(() => {
+    if (positions.length === 0) return
+
+    const maxIndex = positions.length - 1
+    if (voicingIndex > maxIndex) {
+      onVoicingChange(maxIndex)
+    }
+  }, [positions, voicingIndex, onVoicingChange])
+
+  useEffect(() => {
+    if (voicingIndex >= maxResults) {
+      setMaxResults(voicingIndex + 1)
+    }
+  }, [voicingIndex, maxResults])
+
+  const safeIndex = Math.min(voicingIndex, Math.max(positions.length - 1, 0))
+  const hasMultiple = !compact && positions.length > 1
+  const canSearchMore = !compact && Boolean(chordName)
+
+  const width = compact ? 80 : 160
+  const height = compact ? 100 : 200
+  const noDataHeight = compact ? 80 : 180
+
+  return (
+    <div ref={wrapperRef} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+      {isVisible || !compact ? (
+        <div
+          ref={containerRef}
+          className={compact ? 'chord-diagram-container chord-diagram-container--compact' : 'chord-diagram-container'}
+          style={{ width: `${width}px`, height: `${height}px` }}
+        />
+      ) : (
+        <div style={{
+          width: `${width}px`,
+          height: `${height}px`,
+          borderRadius: '10px',
+          background: 'linear-gradient(135deg, rgba(241,245,249,1) 0%, rgba(226,232,240,0.72) 100%)',
+        }} />
+      )}
+      {isVisible && positions.length === 0 && (
+        <div style={{
+          width: `${width}px`,
+          height: `${noDataHeight}px`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: '#f5f5f5',
+          border: '1px solid #ddd',
+          borderRadius: '8px',
+          fontSize: compact ? '11px' : '14px',
+          color: '#999',
+          textAlign: 'center',
+          padding: '8px',
+        }}>
+          <span>{displayName ?? chordName}<br />No diagram</span>
+        </div>
+      )}
+      {hasMultiple && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            onClick={() => onVoicingChange(Math.max(0, safeIndex - 1))}
+            disabled={safeIndex === 0}
+            style={{
+              padding: '4px 10px',
+              border: '1px solid #ccc',
+              borderRadius: '4px',
+              backgroundColor: safeIndex === 0 ? '#f5f5f5' : 'white',
+              cursor: safeIndex === 0 ? 'not-allowed' : 'pointer',
+              fontSize: '16px',
+            }}
+          >
+            ←
+          </button>
+          <span style={{ fontSize: '12px', color: '#666' }}>
+            {safeIndex + 1} / {positions.length}
+          </span>
+          <button
+            onClick={() => onVoicingChange(Math.min(positions.length - 1, safeIndex + 1))}
+            disabled={safeIndex === positions.length - 1}
+            style={{
+              padding: '4px 10px',
+              border: '1px solid #ccc',
+              borderRadius: '4px',
+              backgroundColor: safeIndex === positions.length - 1 ? '#f5f5f5' : 'white',
+              cursor: safeIndex === positions.length - 1 ? 'not-allowed' : 'pointer',
+              fontSize: '16px',
+            }}
+          >
+            →
+          </button>
+        </div>
+      )}
+      {canSearchMore && (
+        <button
+          onClick={() => {
+            if (onExploreMore) {
+              onExploreMore()
+              return
+            }
+            setMaxResults((prev) => prev + 12)
+            setMaxFret(18)
+          }}
+          style={{
+            padding: '4px 10px',
+            border: '1px solid #d1d5db',
+            borderRadius: '999px',
+            backgroundColor: 'white',
+            color: '#4b5563',
+            cursor: 'pointer',
+            fontSize: '12px',
+          }}
+        >
+          {onExploreMore ? '候補を一覧表示' : 'もっと候補を探す'}
+        </button>
+      )}
+    </div>
+  )
+}
+
+export default memo(ChordDiagram)
