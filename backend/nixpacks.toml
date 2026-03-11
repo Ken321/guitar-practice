@@ -26,7 +26,7 @@ nixPkgs = [
 
 [phases.install]
 cmds = [
-  "pip install -r requirements.txt",
+  "python -m pip install -r requirements.txt",
   "playwright install chromium"
 ]
 
