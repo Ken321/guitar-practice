@@ -134,6 +134,7 @@ export default function ChordPopover({
               const positions = resolveChordVoicings(chordName, { maxResults: voicingIndex + 1, maxFret: 18, maxSpan: 5 })
               const position = positions[voicingIndex]
               await onSaveVoicing(voicingIndex, position ? getChordPositionSignature(position) : null, chordName)
+              onClose()
             } catch (err) {
               console.error(err)
               setSaveError('押さえ方の保存に失敗しました')
@@ -167,6 +168,8 @@ export default function ChordPopover({
           onConfirm={async (nextIndex, voicingSignature) => {
             await onSaveVoicing(nextIndex, voicingSignature, chordName)
             setVoicingIndex(nextIndex)
+            setShowVoicingModal(false)
+            onClose()
           }}
         />
       )}

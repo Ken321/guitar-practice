@@ -79,7 +79,6 @@ export default function ChordVoicingModal({
       setError(null)
       const position = positions[selectedIndex]
       await onConfirm(selectedIndex, position ? getChordPositionSignature(position) : null)
-      onClose()
     } catch (err) {
       console.error(err)
       setError('押さえ方の保存に失敗しました')

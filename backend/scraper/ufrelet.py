@@ -203,6 +203,12 @@ class UFretScraper(ScraperBase):
                                 charPos += segLyric.length;
                             }
 
+                            if (!lyrics.trim() && chords.length > 0) {
+                                chords.forEach((chord, index) => {
+                                    chord.position = index;
+                                });
+                            }
+
                             if (lyrics.trim() || chords.length > 0) {
                                 currentSection.lines.push({ lyrics: lyrics.trim(), chords });
                             }
@@ -266,8 +272,11 @@ class UFretScraper(ScraperBase):
                     chord_line
                 ))
                 for match in chord_matches:
-                    ratio = match.start() / max(len(chord_line), 1)
-                    position = int(ratio * max(len(lyric_line), 1))
+                    if lyric_line:
+                        ratio = match.start() / max(len(chord_line), 1)
+                        position = int(ratio * len(lyric_line))
+                    else:
+                        position = len(chords)
                     chords.append({"position": position, "chord_name": match.group(0)})
 
                 if lyric_line or chords:

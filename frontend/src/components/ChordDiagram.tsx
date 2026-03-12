@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState } from 'react'
-import { SVGuitarChord, ChordStyle } from 'svguitar'
+import { SVGuitarChord, ChordStyle, type Finger, SILENT } from 'svguitar'
 import { ChordPosition, findPreferredVoicingIndex, resolveChordVoicings } from '../utils/chordVoicings'
 
 interface ChordDiagramProps {
@@ -49,31 +49,69 @@ function inferBarres(position: ChordPosition) {
   }).filter((value): value is { fret: number; fromString: number; toString: number } => value !== null)
 }
 
+function toAbsoluteFrets(position: ChordPosition): number[] {
+  return position.frets.map((fret) => {
+    if (fret <= 0) return fret
+    if (position.baseFret <= 1) return fret
+    return position.baseFret + fret - 1
+  })
+}
+
+function normalizeDisplayPosition(position: ChordPosition): ChordPosition {
+  const absoluteFrets = toAbsoluteFrets(position)
+  const positiveFrets = absoluteFrets.filter((fret) => fret > 0)
+  const hasOpenString = absoluteFrets.some((fret) => fret === 0)
+  const maxPositiveFret = positiveFrets.length > 0 ? Math.max(...positiveFrets) : 0
+  const shouldRenderFromNut = hasOpenString && maxPositiveFret <= 5
+
+  if (!shouldRenderFromNut) {
+    return position
+  }
+
+  return {
+    ...position,
+    frets: absoluteFrets,
+    barres: (position.barres ?? []).map((fret) => {
+      if (fret <= 0) return fret
+      if (position.baseFret <= 1) return fret
+      return position.baseFret + fret - 1
+    }),
+    baseFret: 1,
+  }
+}
+
 export function renderChordDiagram(container: HTMLElement, position: ChordPosition, chordName: string, compact = false, displayName?: string) {
   container.innerHTML = ''
 
   const chart = new SVGuitarChord(container)
+  const displayPosition = normalizeDisplayPosition(position)
 
-  const fingers: [number, number][] = []
-  const numStrings = position.frets.length
+  const fingers: Finger[] = []
+  const numStrings = displayPosition.frets.length
 
-  position.frets.forEach((fret, stringIndex) => {
+  displayPosition.frets.forEach((fret, stringIndex) => {
     const svgString = numStrings - stringIndex
 
     if (fret > 0) {
       fingers.push([svgString, fret])
+      return
+    }
+
+    if (fret < 0) {
+      fingers.push([svgString, SILENT])
     }
   })
 
-  const barres = inferBarres(position)
+  const barres = inferBarres(displayPosition)
 
   chart
     .configure({
       strings: 6,
       frets: 5,
-      position: position.baseFret || 1,
+      position: displayPosition.baseFret || 1,
       tuning: [],
       style: ChordStyle.normal,
+      fixedDiagramPosition: true,
       strokeWidth: compact ? 1.5 : 2,
       fingerSize: 0.35,
       fingerTextSize: compact ? 16 : 22,
