@@ -425,7 +425,10 @@ function getBarreInfos(relativeFrets: number[]): BarreInfo[] {
 }
 
 function detectBarres(relativeFrets: number[]): number[] {
-  return getBarreInfos(relativeFrets).map((barre) => barre.fret)
+  const assignment = simulateFingerAssignment(relativeFrets)
+  return [assignment.mainBarre, ...assignment.extraMiniBarres]
+    .filter((barre): barre is BarreInfo => barre !== null)
+    .map((barre) => barre.fret)
 }
 
 function getShapeSignature(absoluteFrets: number[]): string {
@@ -500,37 +503,69 @@ function simulateFingerAssignment(relativeFrets: number[]): FingerAssignment {
     }
   }
 
-  const blocks = getFretBlocks(relativeFrets)
   const barreInfos = getBarreInfos(relativeFrets)
-  const mainBarre = barreInfos[0] ?? null
-  const extraMiniBarres = barreInfos.slice(1).filter((barre) => (
-    mainBarre !== null &&
-    barre.fret > mainBarre.fret &&
-    barre.length <= 3 &&
-    barre.start >= 3
-  ))
-  const invalidSecondaryBarre = barreInfos.slice(1).some((barre) => !extraMiniBarres.includes(barre))
+  const countCoveredNotes = (barre: BarreInfo) => relativeFrets
+    .slice(barre.start, barre.end + 1)
+    .filter((fret) => fret === barre.fret)
+    .length
 
-  let fingerCount = blocks.length
-  const mergedBarres = [mainBarre, ...extraMiniBarres].filter((barre): barre is BarreInfo => barre !== null)
-  mergedBarres.forEach((barre) => {
-    fingerCount -= Math.max(0, barre.sameFretBlocks - 1)
+  const evaluateSelection = (selectedBarres: BarreInfo[]): FingerAssignment => {
+    const sortedBarres = [...selectedBarres].sort((a, b) => a.fret - b.fret)
+    const mainBarre = sortedBarres[0] ?? null
+    const extraMiniBarres = sortedBarres.slice(1)
+    const invalidSecondaryBarre = extraMiniBarres.some((barre) => (
+      !mainBarre ||
+      barre.fret <= mainBarre.fret ||
+      barre.length > 3 ||
+      barre.start < 2
+    ))
+
+    let fingerCount = positiveFrets.length
+    sortedBarres.forEach((barre) => {
+      fingerCount -= Math.max(0, countCoveredNotes(barre) - 1)
+    })
+
+    let usesThumb = false
+    if (fingerCount > 4 && relativeFrets[0] > 0) {
+      fingerCount -= 1
+      usesThumb = true
+    }
+
+    return {
+      feasible: !invalidSecondaryBarre && extraMiniBarres.length <= 1 && fingerCount <= 4,
+      fingerCount,
+      usesThumb,
+      mainBarre,
+      extraMiniBarres,
+      barreSavings: Math.max(0, positiveFrets.length - fingerCount),
+    }
+  }
+
+  const allSelections: FingerAssignment[] = []
+  const subsetCount = 1 << barreInfos.length
+
+  for (let mask = 0; mask < subsetCount; mask += 1) {
+    const selectedBarres = barreInfos.filter((_, index) => (mask & (1 << index)) !== 0)
+    allSelections.push(evaluateSelection(selectedBarres))
+  }
+
+  allSelections.sort((a, b) => {
+    if (a.feasible !== b.feasible) return a.feasible ? -1 : 1
+
+    const aBarreCount = (a.mainBarre ? 1 : 0) + a.extraMiniBarres.length
+    const bBarreCount = (b.mainBarre ? 1 : 0) + b.extraMiniBarres.length
+    if (aBarreCount !== bBarreCount) return aBarreCount - bBarreCount
+
+    const aMainFret = a.mainBarre?.fret ?? Number.MAX_SAFE_INTEGER
+    const bMainFret = b.mainBarre?.fret ?? Number.MAX_SAFE_INTEGER
+    if (aMainFret !== bMainFret) return aMainFret - bMainFret
+
+    if (a.fingerCount !== b.fingerCount) return a.fingerCount - b.fingerCount
+
+    return b.barreSavings - a.barreSavings
   })
 
-  let usesThumb = false
-  if (fingerCount > 4 && relativeFrets[0] > 0) {
-    fingerCount -= 1
-    usesThumb = true
-  }
-
-  return {
-    feasible: !invalidSecondaryBarre && extraMiniBarres.length <= 1 && fingerCount <= 4,
-    fingerCount,
-    usesThumb,
-    mainBarre,
-    extraMiniBarres,
-    barreSavings: Math.max(0, positiveFrets.length - fingerCount),
-  }
+  return allSelections[0]
 }
 
 function countDirectionChanges(values: number[]): number {
@@ -548,6 +583,22 @@ function countDirectionChanges(values: number[]): number {
   }
 
   return changes
+}
+
+function canUseUpperFretSupportBarre(relativeFrets: number[], barre: BarreInfo | null): boolean {
+  if (!barre) return false
+  if (barre.fret <= 1 || barre.length > 4) return false
+
+  let hasLowerBassSideNote = false
+
+  for (let stringIndex = 0; stringIndex < relativeFrets.length; stringIndex += 1) {
+    const fret = relativeFrets[stringIndex]
+    if (fret <= 0 || fret >= barre.fret) continue
+    if (stringIndex >= barre.start) return false
+    hasLowerBassSideNote = true
+  }
+
+  return hasLowerBassSideNote
 }
 
 function getTopStringChromas(absoluteFrets: number[]): number[] {
@@ -751,7 +802,7 @@ function isPlayableVoicing(absoluteFrets: number[], spec: ChordSpec, maxSpan: nu
 
   if (fingerMetrics.mainBarre) {
     const lowerFrettedNotesExist = relativeFrets.some((fret) => fret > 0 && fret < fingerMetrics.mainBarre!.fret)
-    if (lowerFrettedNotesExist) {
+    if (lowerFrettedNotesExist && !canUseUpperFretSupportBarre(relativeFrets, fingerMetrics.mainBarre)) {
       return false
     }
   }
