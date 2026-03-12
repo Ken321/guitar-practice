@@ -4,6 +4,15 @@ export interface ChordPlacement {
   position: number
   chord_name: string
   preferred_voicing: number
+  has_custom_voicing: boolean
+  preferred_voicing_signature?: string | null
+  preferred_voicing_chord_name?: string | null
+}
+
+export interface VoicingPreference {
+  chord_name: string
+  voicing_signature: string
+  usage_count: number
 }
 
 export interface Line {
@@ -35,11 +44,20 @@ export interface Song {
   sections: Section[]
 }
 
+export interface SongListItem {
+  id: string
+  title: string
+  artist: string
+}
+
 // For creating/editing - no IDs required
 export interface ChordPlacementCreate {
   position: number
   chord_name: string
   preferred_voicing: number
+  has_custom_voicing?: boolean
+  preferred_voicing_signature?: string | null
+  preferred_voicing_chord_name?: string | null
 }
 
 export interface LineCreate {

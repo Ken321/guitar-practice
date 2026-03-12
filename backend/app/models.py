@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, ForeignKey, DateTime, Text
+from sqlalchemy import Column, String, Integer, ForeignKey, DateTime, Text, UniqueConstraint, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from .database import Base
@@ -69,5 +69,20 @@ class ChordPlacement(Base):
     position = Column(Integer, nullable=False, default=0)
     chord_name = Column(String(50), nullable=False)
     preferred_voicing = Column(Integer, nullable=False, default=0)
+    has_custom_voicing = Column(Boolean, nullable=False, default=False)
+    preferred_voicing_signature = Column(String(100), nullable=True)
+    preferred_voicing_chord_name = Column(String(50), nullable=True)
 
     line = relationship("Line", back_populates="chords")
+
+
+class VoicingPreference(Base):
+    __tablename__ = "voicing_preferences"
+    __table_args__ = (
+        UniqueConstraint("chord_name", "voicing_signature", name="uq_voicing_preferences_chord_signature"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    chord_name = Column(String(50), nullable=False)
+    voicing_signature = Column(String(100), nullable=False)
+    usage_count = Column(Integer, nullable=False, default=0)

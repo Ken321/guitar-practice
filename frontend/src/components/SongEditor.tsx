@@ -18,19 +18,49 @@ interface DraggingChord {
   chordIdx: number
 }
 
+function normalizeChordPositions(chords: ChordPlacementCreate[]): ChordPlacementCreate[] {
+  const sortedBasePositions = [...chords]
+    .map((chord) => chord.position)
+    .sort((a, b) => a - b)
+
+  let lastAssigned = -1
+  return chords.map((chord, index) => {
+    const desired = sortedBasePositions[index] ?? index * 4
+    const nextPosition = desired <= lastAssigned ? lastAssigned + 1 : desired
+    lastAssigned = nextPosition
+    return {
+      ...chord,
+      position: nextPosition,
+    }
+  })
+}
+
+function flattenSectionsToLines(sections: SectionCreate[]): SectionCreate['lines'] {
+  return [...sections]
+    .sort((a, b) => a.order - b.order)
+    .flatMap((section) =>
+      [...section.lines]
+        .sort((a, b) => a.order - b.order)
+        .map((line) => ({
+          order: 0,
+          lyrics: line.lyrics,
+          chords: normalizeChordPositions(
+            [...line.chords].sort((a, b) => a.position - b.position),
+          ),
+        }))
+    )
+    .map((line, index) => ({
+      ...line,
+      order: index,
+    }))
+}
+
 function ensureSingleSection(sections: SectionCreate[]): SectionCreate[] {
   if (sections.length === 0) {
     return [{ order: 0, label: '', lines: [{ order: 0, lyrics: '', chords: [] }] }]
   }
 
-  const mergedLines = sections
-    .flatMap((section) => section.lines)
-    .sort((a, b) => a.order - b.order)
-    .map((line, index) => ({
-      order: index,
-      lyrics: line.lyrics,
-      chords: [...line.chords].sort((a, b) => a.position - b.position),
-    }))
+  const mergedLines = flattenSectionsToLines(sections)
 
   return [{ order: 0, label: '', lines: mergedLines.length > 0 ? mergedLines : [{ order: 0, lyrics: '', chords: [] }] }]
 }
@@ -92,16 +122,37 @@ export default function SongEditor({ sections, onChange }: SongEditorProps) {
 
         let nextChords: ChordPlacementCreate[]
         if (chordIdx === null) {
-          nextChords = [...line.chords, { position, chord_name: chord_name.trim(), preferred_voicing: 0 }]
+          nextChords = [...line.chords, {
+            position,
+            chord_name: chord_name.trim(),
+            preferred_voicing: 0,
+            has_custom_voicing: false,
+            preferred_voicing_signature: null,
+            preferred_voicing_chord_name: null,
+          }]
         } else {
           nextChords = line.chords.map((chord, existingIdx) =>
-            existingIdx === chordIdx ? { ...chord, position, chord_name: chord_name.trim() } : chord
+            existingIdx === chordIdx
+              ? chord.chord_name === chord_name.trim()
+                ? { ...chord, position, chord_name: chord_name.trim() }
+                : {
+                  ...chord,
+                  position,
+                  chord_name: chord_name.trim(),
+                  preferred_voicing: 0,
+                  has_custom_voicing: false,
+                  preferred_voicing_signature: null,
+                  preferred_voicing_chord_name: null,
+                }
+              : chord
           )
         }
 
         return {
           ...line,
-          chords: [...nextChords].sort((a, b) => a.position - b.position),
+          chords: normalizeChordPositions(
+            [...nextChords].sort((a, b) => a.position - b.position),
+          ),
         }
       })
     )
@@ -130,16 +181,9 @@ export default function SongEditor({ sections, onChange }: SongEditorProps) {
         const [moved] = reordered.splice(fromIdx, 1)
         reordered.splice(toIdx, 0, moved)
 
-        const sortedPositions = [...line.chords]
-          .map((chord) => chord.position)
-          .sort((a, b) => a - b)
-
         return {
           ...line,
-          chords: reordered.map((chord, chordIndex) => ({
-            ...chord,
-            position: sortedPositions[chordIndex] ?? chordIndex * 4,
-          })),
+          chords: normalizeChordPositions(reordered),
         }
       })
     )

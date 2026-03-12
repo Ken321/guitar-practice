@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import ChordDiagram from './ChordDiagram'
 import ChordVoicingModal from './ChordVoicingModal'
+import { getChordPositionSignature, resolveChordVoicings } from '../utils/chordVoicings'
 
 interface ChordPopoverProps {
   chordName: string
   displayName?: string
   initialVoicingIndex?: number
+  preferenceVersion?: number
   position: { x: number; y: number }
-  onSaveVoicing?: (voicingIndex: number) => Promise<void>
+  onSaveVoicing?: (voicingIndex: number, voicingSignature?: string | null, chordName?: string | null) => Promise<void>
   onClose: () => void
 }
 
@@ -15,6 +17,7 @@ export default function ChordPopover({
   chordName,
   displayName,
   initialVoicingIndex = 0,
+  preferenceVersion = 0,
   position,
   onSaveVoicing,
   onClose,
@@ -22,10 +25,13 @@ export default function ChordPopover({
   const popoverRef = useRef<HTMLDivElement>(null)
   const [voicingIndex, setVoicingIndex] = useState(initialVoicingIndex)
   const [showVoicingModal, setShowVoicingModal] = useState(false)
+  const [modalInitialVoicingIndex, setModalInitialVoicingIndex] = useState(initialVoicingIndex)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const isSavedVoicingSelected = voicingIndex === initialVoicingIndex
 
   useEffect(() => {
     setVoicingIndex(initialVoicingIndex)
+    setModalInitialVoicingIndex(initialVoicingIndex)
     setSaveError(null)
   }, [chordName, initialVoicingIndex])
 
@@ -48,8 +54,8 @@ export default function ChordPopover({
   }, [onClose])
 
   // Calculate position to stay within viewport
-  const popoverWidth = 200
-  const popoverHeight = 300
+  const popoverWidth = 260
+  const popoverHeight = 360
   const margin = 8
 
   let left = position.x
@@ -108,8 +114,12 @@ export default function ChordPopover({
         chordName={chordName}
         displayName={displayName}
         voicingIndex={voicingIndex}
+        preferenceVersion={preferenceVersion}
         onVoicingChange={setVoicingIndex}
-        onExploreMore={() => setShowVoicingModal(true)}
+        onExploreMore={() => {
+          setModalInitialVoicingIndex(voicingIndex)
+          setShowVoicingModal(true)
+        }}
       />
       {saveError && (
         <div style={{ marginTop: '10px', fontSize: '12px', color: '#dc2626' }}>
@@ -121,35 +131,41 @@ export default function ChordPopover({
           onClick={async () => {
             try {
               setSaveError(null)
-              await onSaveVoicing(voicingIndex)
+              const positions = resolveChordVoicings(chordName, { maxResults: voicingIndex + 1, maxFret: 18, maxSpan: 5 })
+              const position = positions[voicingIndex]
+              await onSaveVoicing(voicingIndex, position ? getChordPositionSignature(position) : null, chordName)
             } catch (err) {
               console.error(err)
               setSaveError('押さえ方の保存に失敗しました')
             }
           }}
+          disabled={isSavedVoicingSelected}
           style={{
             width: '100%',
             marginTop: '12px',
             padding: '10px 14px',
             borderRadius: '8px',
             border: 'none',
-            backgroundColor: 'var(--theme-color)',
+            backgroundColor: isSavedVoicingSelected ? 'var(--theme-color-muted)' : 'var(--theme-color)',
             color: 'var(--theme-color-contrast)',
             fontWeight: 700,
-            cursor: 'pointer',
+            cursor: isSavedVoicingSelected ? 'not-allowed' : 'pointer',
+            opacity: isSavedVoicingSelected ? 0.75 : 1,
           }}
         >
-          この押さえ方を保存
+          {isSavedVoicingSelected ? 'この押さえ方は保存済み' : 'この押さえ方を保存'}
         </button>
       )}
       {showVoicingModal && onSaveVoicing && (
         <ChordVoicingModal
           chordName={chordName}
           displayName={displayName}
-          initialVoicingIndex={voicingIndex}
+          initialVoicingIndex={modalInitialVoicingIndex}
+          savedVoicingIndex={initialVoicingIndex}
+          preferenceVersion={preferenceVersion}
           onClose={() => setShowVoicingModal(false)}
-          onConfirm={async (nextIndex) => {
-            await onSaveVoicing(nextIndex)
+          onConfirm={async (nextIndex, voicingSignature) => {
+            await onSaveVoicing(nextIndex, voicingSignature, chordName)
             setVoicingIndex(nextIndex)
           }}
         />

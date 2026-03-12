@@ -19,6 +19,71 @@
 | スクレイピング | Playwright (Chromium) |
 | デプロイ | Railway (backend) / Vercel (frontend) |
 
+## 構成概要
+
+このプロジェクトは `frontend/` と `backend/` を分けた構成です。
+
+- `frontend/`
+  React + Vite の SPA です。曲一覧、曲詳細、追加画面、コードダイアグラム表示、度数表示を担当します。
+- `backend/`
+  FastAPI ベースの API です。曲データの CRUD、コードシート保存、スクレイピング、キー推定を担当します。
+- PostgreSQL
+  曲、セクション、行、コード配置を保存します。
+- 外部サイト
+  U-Fret / 楽器.me からコード譜を取得します。
+
+基本的なデータの流れは次の通りです。
+
+1. frontend が `/api/...` にリクエストする
+2. backend が DB から曲データを返す、またはスクレイピングを実行する
+3. スクレイピング時は `capo` とコード進行から `original_key` を推定し、`key` は譜面キーとして導出する
+4. frontend は譜面キーを基準にコード表示や度数表示を行う
+
+## データモデルの考え方
+
+曲データではキーを 2 種類持ちます。
+
+- `original_key`
+  原曲のキー。実音ベースのキーです。
+- `key`
+  譜面上のキー。カポを前提にコード譜へ書かれているキーです。
+- `capo`
+  カポ位置です。
+
+たとえば `capo=3` で譜面キーが `C` の場合、原曲キーは `Eb` になります。  
+度数表示は譜面に書かれているコードを自然に読めるように、`key` を基準に計算します。
+
+## ディレクトリ構成
+
+役割が分かりやすい主要ディレクトリは次の通りです。
+
+- `backend/app/main.py`
+  FastAPI のエントリポイントです。
+- `backend/app/models.py`
+  SQLAlchemy モデルです。`Song`, `Section`, `Line`, `ChordPlacement` を定義しています。
+- `backend/app/schemas.py`
+  API の入出力スキーマです。
+- `backend/app/routers/songs.py`
+  曲 CRUD とコード内容更新 API です。
+- `backend/app/routers/scraper.py`
+  スクレイピング API の入口です。
+- `backend/app/music_theory.py`
+  キー推定、カポ考慮、譜面キー/原曲キーの導出ロジックです。
+- `backend/scraper/`
+  U-Fret / 楽器.me ごとのスクレイパー実装です。
+- `backend/scripts/`
+  既存曲のメタデータ再計算やバックフィル用スクリプトです。
+- `frontend/src/pages/`
+  ページ単位の UI です。
+- `frontend/src/components/`
+  コード譜表示、ポップオーバー、エディタなどの部品です。
+- `frontend/src/api/client.ts`
+  Axios ベースの API クライアントです。
+- `frontend/src/types/`
+  frontend 側の型定義です。
+- `frontend/src/utils/`
+  度数計算、コード正規化、ボイシング解決などのロジックです。
+
 ## ローカル開発の起動方法
 
 ### 前提条件

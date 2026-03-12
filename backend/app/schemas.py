@@ -10,16 +10,25 @@ class ChordPlacementCreate(BaseModel):
     position: int
     chord_name: str
     preferred_voicing: int = 0
+    has_custom_voicing: bool = False
+    preferred_voicing_signature: Optional[str] = None
+    preferred_voicing_chord_name: Optional[str] = None
 
 
 class ChordPlacementUpdate(BaseModel):
     position: Optional[int] = None
     chord_name: Optional[str] = None
     preferred_voicing: Optional[int] = None
+    has_custom_voicing: Optional[bool] = None
+    preferred_voicing_signature: Optional[str] = None
+    preferred_voicing_chord_name: Optional[str] = None
 
 
 class ChordVoicingUpdate(BaseModel):
     preferred_voicing: int
+    has_custom_voicing: bool = True
+    preferred_voicing_signature: Optional[str] = None
+    preferred_voicing_chord_name: Optional[str] = None
 
 
 class ChordPlacementResponse(BaseModel):
@@ -28,6 +37,17 @@ class ChordPlacementResponse(BaseModel):
     position: int
     chord_name: str
     preferred_voicing: int
+    has_custom_voicing: bool
+    preferred_voicing_signature: Optional[str] = None
+    preferred_voicing_chord_name: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class VoicingPreferenceResponse(BaseModel):
+    chord_name: str
+    voicing_signature: str
+    usage_count: int
 
     model_config = {"from_attributes": True}
 
@@ -83,6 +103,14 @@ class SongUpdate(BaseModel):
     original_key: Optional[str] = None
     capo: Optional[int] = None
     source_url: Optional[str] = None
+
+
+class SongListItemResponse(BaseModel):
+    id: UUID
+    title: str
+    artist: str
+
+    model_config = {"from_attributes": True}
 
 
 class SongResponse(BaseModel):

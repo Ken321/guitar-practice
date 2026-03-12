@@ -1,39 +1,149 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Song, DisplayMode, SectionCreate, ChordPlacement } from '../types'
-import { getSong, updateSong, updateSongContent, updateChordVoicing } from '../api/client'
+import { getSong, getVoicingPreferences, updateSong, updateSongContent, updateChordVoicing } from '../api/client'
 import SectionView from '../components/SectionView'
 import ChordPopover from '../components/ChordPopover'
 import SongEditor from '../components/SongEditor'
 import { COMMON_KEYS, transposeChord, chordToDegree, transposeKeyName } from '../utils/degree'
+import {
+  findPreferredVoicingIndex,
+  getVoicingPreferenceVersion,
+  hydrateVoicingPreferences,
+  recordVoicingPreference,
+} from '../utils/chordVoicings'
 
 interface PopoverState {
   chordId: string
   chordName: string
   displayName?: string
   initialVoicingIndex: number
+  initialVoicingSignature?: string | null
+  initialVoicingChordName?: string | null
   position: { x: number; y: number }
 }
 
-function songToEditableSections(song: Song): SectionCreate[] {
-  const mergedLines = song.sections
-    .flatMap((section) => section.lines)
+interface SongLevelVoicingPreference {
+  preferred_voicing: number
+  preferred_voicing_signature?: string | null
+  preferred_voicing_chord_name?: string | null
+}
+
+function flattenSectionsToLines(sections: Song['sections']): SectionCreate['lines'] {
+  return [...sections]
     .sort((a, b) => a.order - b.order)
+    .flatMap((section) =>
+      [...section.lines]
+        .sort((a, b) => a.order - b.order)
+        .map((line) => ({
+          order: 0,
+          lyrics: line.lyrics,
+          chords: [...line.chords]
+            .sort((a, b) => a.position - b.position)
+            .map((chord) => ({
+              position: chord.position,
+              chord_name: chord.chord_name,
+              preferred_voicing: chord.preferred_voicing,
+              has_custom_voicing: chord.has_custom_voicing,
+              preferred_voicing_signature: chord.preferred_voicing_signature ?? null,
+              preferred_voicing_chord_name: chord.preferred_voicing_chord_name ?? null,
+            })),
+        }))
+    )
     .map((line, index) => ({
+      ...line,
       order: index,
-      lyrics: line.lyrics,
-      chords: line.chords.map((chord) => ({
-        position: chord.position,
-        chord_name: chord.chord_name,
-        preferred_voicing: chord.preferred_voicing,
-      })),
     }))
+}
+
+function songToEditableSections(song: Song): SectionCreate[] {
+  const mergedLines = flattenSectionsToLines(song.sections)
 
   return [{
     order: 0,
     label: '',
     lines: mergedLines.length > 0 ? mergedLines : [{ order: 0, lyrics: '', chords: [] }],
   }]
+}
+
+function findChordPlacementById(song: Song, chordId: string): ChordPlacement | null {
+  for (const section of song.sections) {
+    for (const line of section.lines) {
+      for (const chord of line.chords) {
+        if (chord.id === chordId) {
+          return chord
+        }
+      }
+    }
+  }
+
+  return null
+}
+
+function buildSongLevelVoicingPreferenceMap(song: Song): Map<string, SongLevelVoicingPreference> {
+  const candidatesByChordName = new Map<string, Map<string, { count: number; preference: SongLevelVoicingPreference }>>()
+
+  song.sections.forEach((section) => {
+    section.lines.forEach((line) => {
+      line.chords.forEach((chord) => {
+        if (!chord.has_custom_voicing) return
+
+        const preferenceKey = [
+          chord.preferred_voicing,
+          chord.preferred_voicing_signature ?? '',
+          chord.preferred_voicing_chord_name ?? '',
+        ].join('::')
+        const candidates = candidatesByChordName.get(chord.chord_name) ?? new Map<string, { count: number; preference: SongLevelVoicingPreference }>()
+        const existing = candidates.get(preferenceKey)
+
+        candidates.set(preferenceKey, {
+          count: (existing?.count ?? 0) + 1,
+          preference: {
+            preferred_voicing: chord.preferred_voicing,
+            preferred_voicing_signature: chord.preferred_voicing_signature ?? null,
+            preferred_voicing_chord_name: chord.preferred_voicing_chord_name ?? null,
+          },
+        })
+        candidatesByChordName.set(chord.chord_name, candidates)
+      })
+    })
+  })
+
+  return new Map(
+    Array.from(candidatesByChordName.entries()).flatMap(([chordName, candidates]) => {
+      const selected = Array.from(candidates.values()).sort((a, b) => {
+        if (a.count !== b.count) return b.count - a.count
+        return b.preference.preferred_voicing - a.preference.preferred_voicing
+      })[0]
+
+      return selected ? [[chordName, selected.preference] as const] : []
+    }),
+  )
+}
+
+function applyEffectiveVoicingPreference(
+  chord: ChordPlacement,
+  songLevelPreference: SongLevelVoicingPreference | undefined,
+): ChordPlacement {
+  if (chord.has_custom_voicing) {
+    return chord
+  }
+
+  if (songLevelPreference) {
+    return {
+      ...chord,
+      preferred_voicing: songLevelPreference.preferred_voicing,
+      preferred_voicing_signature: songLevelPreference.preferred_voicing_signature ?? null,
+      preferred_voicing_chord_name: songLevelPreference.preferred_voicing_chord_name ?? null,
+    }
+  }
+
+  return {
+    ...chord,
+    preferred_voicing: 0,
+    preferred_voicing_signature: null,
+    preferred_voicing_chord_name: null,
+  }
 }
 
 export default function ChordSheet() {
@@ -48,6 +158,7 @@ export default function ChordSheet() {
   const [isEditing, setIsEditing] = useState(false)
   const [popover, setPopover] = useState<PopoverState | null>(null)
   const [saving, setSaving] = useState(false)
+  const [voicingPreferenceVersion, setVoicingPreferenceVersion] = useState(getVoicingPreferenceVersion())
   const [draftTitle, setDraftTitle] = useState('')
   const [draftArtist, setDraftArtist] = useState('')
   const [draftOriginalKey, setDraftOriginalKey] = useState('C')
@@ -58,6 +169,27 @@ export default function ChordSheet() {
   useEffect(() => {
     if (id) loadSong(id)
   }, [id])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadPreferences() {
+      try {
+        const preferences = await getVoicingPreferences()
+        if (!cancelled) {
+          setVoicingPreferenceVersion(hydrateVoicingPreferences(preferences))
+        }
+      } catch (err) {
+        console.error(err)
+      }
+    }
+
+    loadPreferences()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   async function loadSong(songId: string) {
     try {
@@ -80,20 +212,41 @@ export default function ChordSheet() {
 
   const handleChordClick = useCallback((chord: ChordPlacement, event: React.MouseEvent) => {
     event.stopPropagation()
-    const transposed = transposeChordToKey(chord.chord_name, song?.key || displayKey, displayKey)
+    const resolvedInitialVoicingIndex = findPreferredVoicingIndex(
+      chord.chord_name,
+      chord.preferred_voicing_signature,
+      chord.preferred_voicing_chord_name,
+      { maxFret: 18, maxSpan: 5 },
+    ) ?? chord.preferred_voicing
     setPopover({
       chordId: chord.id,
-      chordName: transposed,
-      displayName: displayMode === 'degree' ? chordToDegree(transposed, displayKey) : undefined,
-      initialVoicingIndex: chord.preferred_voicing,
+      chordName: chord.chord_name,
+      displayName: displayMode === 'degree' ? chordToDegree(chord.chord_name, displayKey) : undefined,
+      initialVoicingIndex: resolvedInitialVoicingIndex,
+      initialVoicingSignature: chord.preferred_voicing_signature,
+      initialVoicingChordName: chord.preferred_voicing_chord_name,
       position: { x: event.clientX, y: event.clientY },
     })
-  }, [song?.key, displayKey, displayMode])
+  }, [displayKey, displayMode, voicingPreferenceVersion])
 
-  async function handleSaveVoicing(chordId: string, voicingIndex: number) {
-    if (!id) return
+  async function handleSaveVoicing(
+    chordId: string,
+    voicingIndex: number,
+    voicingSignature?: string | null,
+    voicingChordName?: string | null,
+  ) {
+    if (!id || !song) return
 
-    await updateChordVoicing(id, chordId, voicingIndex)
+    const previousChord = findChordPlacementById(song, chordId)
+
+    const updatedChord = await updateChordVoicing(id, chordId, voicingIndex, voicingSignature, voicingChordName, true)
+
+    setVoicingPreferenceVersion(recordVoicingPreference({
+      previousChordName: previousChord?.has_custom_voicing ? previousChord.preferred_voicing_chord_name : null,
+      previousSignature: previousChord?.has_custom_voicing ? previousChord.preferred_voicing_signature : null,
+      chordName: voicingChordName,
+      signature: voicingSignature,
+    }))
     setSong((prev) => {
       if (!prev) return prev
       return {
@@ -103,14 +256,19 @@ export default function ChordSheet() {
           lines: section.lines.map((line) => ({
             ...line,
             chords: line.chords.map((chord) =>
-              chord.id === chordId ? { ...chord, preferred_voicing: voicingIndex } : chord
+              chord.id === chordId ? { ...chord, ...updatedChord } : chord
             ),
           })),
         })),
       }
     })
     setPopover((prev) => prev && prev.chordId === chordId
-      ? { ...prev, initialVoicingIndex: voicingIndex }
+      ? {
+        ...prev,
+        initialVoicingIndex: voicingIndex,
+        initialVoicingSignature: voicingSignature ?? null,
+        initialVoicingChordName: voicingChordName ?? null,
+      }
       : prev)
   }
 
@@ -127,23 +285,29 @@ export default function ChordSheet() {
 
   const transposedSections = useMemo(() => {
     if (!song) return []
-    if (song.key === displayKey) return song.sections
 
     const keyOrder = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
     const normKey = (k: string) => k.replace('Db', 'C#').replace('Eb', 'D#').replace('Gb', 'F#').replace('Ab', 'G#').replace('Bb', 'A#').replace('m', '')
     const origIdx = keyOrder.indexOf(normKey(song.key))
     const newIdx = keyOrder.indexOf(normKey(displayKey))
-    if (origIdx === -1 || newIdx === -1) return song.sections
-    const semitones = (newIdx - origIdx + 12) % 12
+    const semitones = origIdx === -1 || newIdx === -1 ? 0 : (newIdx - origIdx + 12) % 12
+    const songLevelVoicingPreferences = buildSongLevelVoicingPreferenceMap(song)
 
-    return song.sections.map(sec => ({
-      ...sec,
-      lines: sec.lines.map(line => ({
+    return song.sections.map((section) => ({
+      ...section,
+      lines: section.lines.map((line) => ({
         ...line,
-        chords: line.chords.map(chord => ({
-          ...chord,
-          chord_name: transposeChord(chord.chord_name, semitones),
-        })),
+        chords: line.chords.map((chord) => {
+          const effectiveChord = applyEffectiveVoicingPreference(
+            chord,
+            songLevelVoicingPreferences.get(chord.chord_name),
+          )
+
+          return {
+            ...effectiveChord,
+            chord_name: transposeChord(chord.chord_name, semitones),
+          }
+        }),
       })),
     }))
   }, [song, displayKey])
@@ -409,13 +573,14 @@ export default function ChordSheet() {
             </div>
           ) : (
             transposedSections.map(section => (
-              <SectionView
-                key={section.id}
-                section={section}
-                displayMode={displayMode}
-                songKey={displayKey}
-                onChordClick={handleChordClick}
-              />
+            <SectionView
+              key={section.id}
+              section={section}
+              displayMode={displayMode}
+              songKey={displayKey}
+              preferenceVersion={voicingPreferenceVersion}
+              onChordClick={handleChordClick}
+            />
             ))
           )}
         </div>
@@ -427,8 +592,11 @@ export default function ChordSheet() {
           chordName={popover.chordName}
           displayName={popover.displayName}
           initialVoicingIndex={popover.initialVoicingIndex}
+          preferenceVersion={voicingPreferenceVersion}
           position={popover.position}
-          onSaveVoicing={(voicingIndex) => handleSaveVoicing(popover.chordId, voicingIndex)}
+          onSaveVoicing={(voicingIndex, voicingSignature, chordName) => (
+            handleSaveVoicing(popover.chordId, voicingIndex, voicingSignature, chordName)
+          )}
           onClose={() => setPopover(null)}
         />
       )}

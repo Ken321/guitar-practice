@@ -1,5 +1,6 @@
 import { Chord, Note } from 'tonal'
 import guitar from '@tombatossals/chords-db/lib/guitar.json'
+import type { VoicingPreference } from '../types'
 import { normalizeChordName } from './normalizeChordName'
 
 export interface ChordPosition {
@@ -40,6 +41,9 @@ const DEFAULT_MAX_RESULTS = 16
 const DEFAULT_MAX_FRET = 12
 const DEFAULT_MAX_SPAN = 4
 const MAX_CACHE_SIZE = 128
+
+const voicingUsageCounts = new Map<string, Map<string, number>>()
+let voicingPreferenceVersion = 0
 
 const NOTE_MAP: Record<string, string> = {
   C: 'C',
@@ -129,6 +133,10 @@ function buildResolveCacheKey(chordName: string, maxFret: number, maxSpan: numbe
   return `${chordName}::${maxFret}::${maxSpan}`
 }
 
+function clearRankedVoicingsCache() {
+  rankedVoicingsCache.clear()
+}
+
 function readRankedVoicingsFromCache(cacheKey: string): ChordPosition[] | null {
   const cached = rankedVoicingsCache.get(cacheKey)
   if (!cached) return null
@@ -149,6 +157,76 @@ function writeRankedVoicingsToCache(cacheKey: string, positions: ChordPosition[]
   }
 
   return positions
+}
+
+function normalizeUsageChordName(chordName: string): string {
+  return normalizeChordName(chordName)
+}
+
+function getVoicingUsageCount(chordName: string, signature: string): number {
+  const usageBySignature = voicingUsageCounts.get(normalizeUsageChordName(chordName))
+  return usageBySignature?.get(signature) ?? 0
+}
+
+export function getVoicingPreferenceVersion(): number {
+  return voicingPreferenceVersion
+}
+
+export function hydrateVoicingPreferences(preferences: VoicingPreference[]): number {
+  voicingUsageCounts.clear()
+
+  preferences.forEach((preference) => {
+    if (preference.usage_count <= 0) return
+    const normalizedChordName = normalizeUsageChordName(preference.chord_name)
+    const usageBySignature = voicingUsageCounts.get(normalizedChordName) ?? new Map<string, number>()
+    usageBySignature.set(preference.voicing_signature, preference.usage_count)
+    voicingUsageCounts.set(normalizedChordName, usageBySignature)
+  })
+
+  voicingPreferenceVersion += 1
+  clearRankedVoicingsCache()
+  return voicingPreferenceVersion
+}
+
+export function recordVoicingPreference(params: {
+  previousChordName?: string | null
+  previousSignature?: string | null
+  chordName?: string | null
+  signature?: string | null
+}): number {
+  const {
+    previousChordName,
+    previousSignature,
+    chordName,
+    signature,
+  } = params
+
+  if (previousChordName && previousSignature) {
+    const normalizedPreviousChordName = normalizeUsageChordName(previousChordName)
+    const previousUsageBySignature = voicingUsageCounts.get(normalizedPreviousChordName)
+    if (previousUsageBySignature) {
+      const nextCount = Math.max(0, (previousUsageBySignature.get(previousSignature) ?? 0) - 1)
+      if (nextCount === 0) {
+        previousUsageBySignature.delete(previousSignature)
+      } else {
+        previousUsageBySignature.set(previousSignature, nextCount)
+      }
+      if (previousUsageBySignature.size === 0) {
+        voicingUsageCounts.delete(normalizedPreviousChordName)
+      }
+    }
+  }
+
+  if (chordName && signature) {
+    const normalizedChordName = normalizeUsageChordName(chordName)
+    const usageBySignature = voicingUsageCounts.get(normalizedChordName) ?? new Map<string, number>()
+    usageBySignature.set(signature, (usageBySignature.get(signature) ?? 0) + 1)
+    voicingUsageCounts.set(normalizedChordName, usageBySignature)
+  }
+
+  voicingPreferenceVersion += 1
+  clearRankedVoicingsCache()
+  return voicingPreferenceVersion
 }
 
 function normalizeDbSuffix(suffix: string): string {
@@ -293,6 +371,10 @@ function toAbsoluteFrets(position: ChordPosition): number[] {
   })
 }
 
+export function getChordPositionSignature(position: ChordPosition): string {
+  return toAbsoluteFrets(position).join(',')
+}
+
 function getBarreInfos(relativeFrets: number[]): BarreInfo[] {
   const blocks = getFretBlocks(relativeFrets)
   const distinctFrets = Array.from(new Set(relativeFrets.filter((fret) => fret > 0))).sort((a, b) => a - b)
@@ -321,12 +403,21 @@ function getBarreInfos(relativeFrets: number[]): BarreInfo[] {
         end += 1
       }
 
+      const length = end - start + 1
+      const sameFretBlocks = blocks.filter((block) => block.fret === fret).length
+
+      // Treat simple two-string doublestops as independent fingers, not automatic barres.
+      // This keeps common open shapes like E major from being rejected.
+      if (length < 3 && sameFretBlocks < 2) {
+        return null
+      }
+
       return {
         fret,
         start,
         end,
-        length: end - start + 1,
-        sameFretBlocks: blocks.filter((block) => block.fret === fret).length,
+        length,
+        sameFretBlocks,
       }
     })
     .filter((value): value is BarreInfo => value !== null)
@@ -706,14 +797,30 @@ function searchWindowCandidates(stringFrets: number[], windowStart: number, maxS
 }
 
 function rankAndMergeCandidates(
+  chordName: string,
   dbCandidates: ChordPositionWithMeta[],
   generatedCandidates: ChordPositionWithMeta[],
   maxResults: number,
 ): ChordPosition[] {
+  const sortedCandidates = [...dbCandidates, ...generatedCandidates].sort((a, b) => {
+    const usageDelta = getVoicingUsageCount(chordName, b.signature) - getVoicingUsageCount(chordName, a.signature)
+    if (usageDelta !== 0) return usageDelta
+
+    if (a.source !== b.source) {
+      return a.source === 'db' ? -1 : 1
+    }
+
+    if (a.score !== b.score) {
+      return b.score - a.score
+    }
+
+    return a.signature.localeCompare(b.signature)
+  })
+
   const merged: ChordPositionWithMeta[] = []
   const seenShapes = new Set<string>()
 
-  for (const candidate of [...dbCandidates, ...generatedCandidates]) {
+  for (const candidate of sortedCandidates) {
     if (seenShapes.has(candidate.shapeSignature)) continue
     seenShapes.add(candidate.shapeSignature)
     merged.push(candidate)
@@ -724,10 +831,34 @@ function rankAndMergeCandidates(
 }
 
 function rankAllCandidates(
+  chordName: string,
   dbCandidates: ChordPositionWithMeta[],
   generatedCandidates: ChordPositionWithMeta[],
 ): ChordPosition[] {
-  return rankAndMergeCandidates(dbCandidates, generatedCandidates, Number.MAX_SAFE_INTEGER)
+  return rankAndMergeCandidates(chordName, dbCandidates, generatedCandidates, Number.MAX_SAFE_INTEGER)
+}
+
+export function findPreferredVoicingIndex(
+  chordName: string,
+  preferredVoicingSignature?: string | null,
+  preferredVoicingChordName?: string | null,
+  options: ResolveChordVoicingsOptions = {},
+): number | null {
+  const normalizedChordName = normalizeChordName(chordName)
+  const normalizedPreferredChordName = preferredVoicingChordName ? normalizeChordName(preferredVoicingChordName) : null
+
+  if (!preferredVoicingSignature || !normalizedPreferredChordName || normalizedChordName !== normalizedPreferredChordName) {
+    return null
+  }
+
+  const positions = resolveChordVoicings(normalizedChordName, {
+    maxResults: 1000,
+    maxFret: options.maxFret ?? 18,
+    maxSpan: options.maxSpan ?? 5,
+  })
+
+  const index = positions.findIndex((position) => getChordPositionSignature(position) === preferredVoicingSignature)
+  return index >= 0 ? index : null
 }
 
 function filterPlayableCandidates(
@@ -803,7 +934,7 @@ export function resolveChordVoicings(
   const spec = buildChordSpec(normalizedChordName)
   const dbCandidates = filterPlayableCandidates(getDbCandidates(normalizedChordName), spec, maxSpan)
   const generatedCandidates = generateChordVoicings(normalizedChordName, { ...options, maxFret, maxSpan })
-  const ranked = rankAllCandidates(dbCandidates, generatedCandidates)
+  const ranked = rankAllCandidates(normalizedChordName, dbCandidates, generatedCandidates)
   return writeRankedVoicingsToCache(cacheKey, ranked).slice(0, maxResults)
 }
 
@@ -826,7 +957,7 @@ export async function resolveChordVoicingsAsync(
   const dbCandidates = filterPlayableCandidates(getDbCandidates(normalizedChordName), spec, maxSpan)
 
   if (!spec) {
-    const ranked = rankAllCandidates(dbCandidates, [])
+    const ranked = rankAllCandidates(normalizedChordName, dbCandidates, [])
     return writeRankedVoicingsToCache(cacheKey, ranked).slice(0, maxResults)
   }
 
@@ -872,6 +1003,6 @@ export async function resolveChordVoicingsAsync(
   }
 
   const generatedCandidates = Array.from(bestBySignature.values()).sort((a, b) => b.score - a.score)
-  const ranked = rankAllCandidates(dbCandidates, generatedCandidates)
+  const ranked = rankAllCandidates(normalizedChordName, dbCandidates, generatedCandidates)
   return writeRankedVoicingsToCache(cacheKey, ranked).slice(0, maxResults)
 }

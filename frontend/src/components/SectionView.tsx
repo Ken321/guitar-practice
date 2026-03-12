@@ -7,6 +7,7 @@ interface SectionViewProps {
   section: Section
   displayMode: DisplayMode
   songKey: string
+  preferenceVersion?: number
   onChordClick: (chord: ChordPlacement, event: React.MouseEvent) => void
 }
 
@@ -52,12 +53,14 @@ function ChordLine({
   lyrics,
   displayMode,
   songKey,
+  preferenceVersion = 0,
   onChordClick,
 }: {
   chords: ChordPlacement[]
   lyrics: string
   displayMode: DisplayMode
   songKey: string
+  preferenceVersion?: number
   onChordClick: (chord: ChordPlacement, event: React.MouseEvent) => void
 }) {
   const sortedChords = useMemo(
@@ -92,6 +95,9 @@ function ChordLine({
                 chordName={chord.chord_name}
                 displayName={displayName}
                 voicingIndex={chord.preferred_voicing}
+                voicingSignature={chord.preferred_voicing_signature}
+                voicingChordName={chord.preferred_voicing_chord_name}
+                preferenceVersion={preferenceVersion}
                 onVoicingChange={NOOP}
                 compact
               />
@@ -154,6 +160,9 @@ function ChordLine({
                 chordName={seg.chord.chord_name}
                 displayName={displayName}
                 voicingIndex={seg.chord.preferred_voicing}
+                voicingSignature={seg.chord.preferred_voicing_signature}
+                voicingChordName={seg.chord.preferred_voicing_chord_name}
+                preferenceVersion={preferenceVersion}
                 onVoicingChange={NOOP}
                 compact
               />
@@ -182,6 +191,7 @@ function SectionView({
   section,
   displayMode,
   songKey,
+  preferenceVersion = 0,
   onChordClick,
 }: SectionViewProps) {
   return (
@@ -213,6 +223,7 @@ function SectionView({
             lyrics={line.lyrics}
             displayMode={displayMode}
             songKey={songKey}
+            preferenceVersion={preferenceVersion}
             onChordClick={onChordClick}
           />
         ))}

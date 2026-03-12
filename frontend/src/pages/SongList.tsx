@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Song } from '../types'
+import { SongListItem } from '../types'
 import { getSongs, deleteSong } from '../api/client'
 
 export default function SongList() {
   const navigate = useNavigate()
-  const [songs, setSongs] = useState<Song[]>([])
+  const [songs, setSongs] = useState<SongListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -87,11 +87,6 @@ export default function SongList() {
   })
   const selectedCount = selectedSongIds.length
   const isDeleting = deletingSongIds.length > 0
-
-  function formatDate(dateStr: string) {
-    const date = new Date(dateStr)
-    return date.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' })
-  }
 
   return (
     <div style={{ padding: '24px' }}>
@@ -210,10 +205,6 @@ export default function SongList() {
                 <th style={{ padding: '12px 12px 12px 16px', textAlign: 'center', width: '56px' }} />
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', color: '#666', fontWeight: '600' }}>曲名</th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', color: '#666', fontWeight: '600' }}>アーティスト</th>
-                <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '13px', color: '#666', fontWeight: '600', width: '90px' }}>譜面キー</th>
-                <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '13px', color: '#666', fontWeight: '600', width: '90px' }}>原曲キー</th>
-                <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '13px', color: '#666', fontWeight: '600', width: '80px' }}>カポ</th>
-                <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '13px', color: '#666', fontWeight: '600', width: '100px' }}>登録日</th>
               </tr>
             </thead>
             <tbody>
@@ -255,28 +246,6 @@ export default function SongList() {
                     </td>
                     <td style={{ padding: '14px 16px', color: '#555' }}>
                       {song.artist}
-                    </td>
-                    <td style={{ padding: '14px 16px', textAlign: 'center' }}>
-                      <span style={{
-                        display: 'inline-block',
-                        padding: '2px 8px',
-                        backgroundColor: 'var(--theme-color-soft)',
-                        color: 'var(--theme-color)',
-                        borderRadius: '12px',
-                        fontSize: '13px',
-                        fontWeight: '500',
-                      }}>
-                        {song.key}
-                      </span>
-                    </td>
-                    <td style={{ padding: '14px 16px', textAlign: 'center', fontSize: '13px', color: '#555' }}>
-                      {song.original_key}
-                    </td>
-                    <td style={{ padding: '14px 16px', textAlign: 'center', fontSize: '13px', color: '#555' }}>
-                      {song.capo}
-                    </td>
-                    <td style={{ padding: '14px 16px', textAlign: 'center', fontSize: '13px', color: '#999' }}>
-                      {formatDate(song.created_at)}
                     </td>
                   </tr>
                 )

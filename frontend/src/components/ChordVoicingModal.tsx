@@ -1,19 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChordPosition, resolveChordVoicingsAsync } from '../utils/chordVoicings'
+import { ChordPosition, getChordPositionSignature, resolveChordVoicingsAsync } from '../utils/chordVoicings'
 import { StaticChordDiagram } from './ChordDiagram'
 
 interface ChordVoicingModalProps {
   chordName: string
   displayName?: string
   initialVoicingIndex: number
+  savedVoicingIndex: number
+  preferenceVersion?: number
   onClose: () => void
-  onConfirm: (voicingIndex: number) => Promise<void>
+  onConfirm: (voicingIndex: number, voicingSignature?: string | null) => Promise<void>
 }
 
 export default function ChordVoicingModal({
   chordName,
   displayName,
   initialVoicingIndex,
+  savedVoicingIndex,
+  preferenceVersion = 0,
   onClose,
   onConfirm,
 }: ChordVoicingModalProps) {
@@ -22,6 +26,7 @@ export default function ChordVoicingModal({
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const isSavedVoicingSelected = selectedIndex === savedVoicingIndex
 
   useEffect(() => {
     let cancelled = false
@@ -55,7 +60,7 @@ export default function ChordVoicingModal({
     return () => {
       cancelled = true
     }
-  }, [chordName, initialVoicingIndex])
+  }, [chordName, initialVoicingIndex, preferenceVersion])
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -72,7 +77,8 @@ export default function ChordVoicingModal({
     try {
       setSaving(true)
       setError(null)
-      await onConfirm(selectedIndex)
+      const position = positions[selectedIndex]
+      await onConfirm(selectedIndex, position ? getChordPositionSignature(position) : null)
       onClose()
     } catch (err) {
       console.error(err)
@@ -238,18 +244,18 @@ export default function ChordVoicingModal({
             </button>
             <button
               onClick={handleConfirm}
-              disabled={saving || loading || positions.length === 0}
+              disabled={saving || loading || positions.length === 0 || isSavedVoicingSelected}
               style={{
                 padding: '10px 18px',
                 borderRadius: '8px',
                 border: 'none',
-                backgroundColor: saving || loading || positions.length === 0 ? 'var(--theme-color-muted)' : 'var(--theme-color)',
+                backgroundColor: saving || loading || positions.length === 0 || isSavedVoicingSelected ? 'var(--theme-color-muted)' : 'var(--theme-color)',
                 color: 'var(--theme-color-contrast)',
                 fontWeight: 700,
-                cursor: saving || loading || positions.length === 0 ? 'not-allowed' : 'pointer',
+                cursor: saving || loading || positions.length === 0 || isSavedVoicingSelected ? 'not-allowed' : 'pointer',
               }}
             >
-              {saving ? '保存中...' : 'この押さえ方で保存'}
+              {saving ? '保存中...' : isSavedVoicingSelected ? 'この押さえ方は保存済み' : 'この押さえ方で保存'}
             </button>
           </div>
         </div>

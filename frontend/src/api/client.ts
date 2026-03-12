@@ -1,5 +1,15 @@
 import axios from 'axios'
-import type { Song, SongCreate, SongUpdate, SectionCreate, ScrapeRequest, ScrapeResponse, ChordPlacement } from '../types'
+import type {
+  Song,
+  SongCreate,
+  SongUpdate,
+  SectionCreate,
+  ScrapeRequest,
+  ScrapeResponse,
+  ChordPlacement,
+  SongListItem,
+  VoicingPreference,
+} from '../types'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:8000',
@@ -8,8 +18,8 @@ const api = axios.create({
   },
 })
 
-export async function getSongs(): Promise<Song[]> {
-  const response = await api.get<Song[]>('/api/songs')
+export async function getSongs(): Promise<SongListItem[]> {
+  const response = await api.get<SongListItem[]>('/api/songs')
   return response.data
 }
 
@@ -42,9 +52,24 @@ export async function scrapeSong(data: ScrapeRequest): Promise<ScrapeResponse> {
   return response.data
 }
 
-export async function updateChordVoicing(songId: string, chordId: string, preferredVoicing: number): Promise<ChordPlacement> {
+export async function getVoicingPreferences(): Promise<VoicingPreference[]> {
+  const response = await api.get<VoicingPreference[]>('/api/songs/voicing-preferences')
+  return response.data
+}
+
+export async function updateChordVoicing(
+  songId: string,
+  chordId: string,
+  preferredVoicing: number,
+  preferredVoicingSignature?: string | null,
+  preferredVoicingChordName?: string | null,
+  hasCustomVoicing = true,
+): Promise<ChordPlacement> {
   const response = await api.patch<ChordPlacement>(`/api/songs/${songId}/chords/${chordId}`, {
     preferred_voicing: preferredVoicing,
+    has_custom_voicing: hasCustomVoicing,
+    preferred_voicing_signature: preferredVoicingSignature ?? null,
+    preferred_voicing_chord_name: preferredVoicingChordName ?? null,
   })
   return response.data
 }

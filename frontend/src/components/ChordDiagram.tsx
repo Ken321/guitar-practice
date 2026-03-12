@@ -1,11 +1,14 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import { SVGuitarChord, ChordStyle } from 'svguitar'
-import { ChordPosition, resolveChordVoicings } from '../utils/chordVoicings'
+import { ChordPosition, findPreferredVoicingIndex, resolveChordVoicings } from '../utils/chordVoicings'
 
 interface ChordDiagramProps {
   chordName: string
   displayName?: string
   voicingIndex: number
+  voicingSignature?: string | null
+  voicingChordName?: string | null
+  preferenceVersion?: number
   onVoicingChange: (index: number) => void
   compact?: boolean
   onExploreMore?: () => void
@@ -114,13 +117,24 @@ export function StaticChordDiagram({
   )
 }
 
-function ChordDiagram({ chordName, displayName, voicingIndex, onVoicingChange, compact = false, onExploreMore }: ChordDiagramProps) {
+function ChordDiagram({
+  chordName,
+  displayName,
+  voicingIndex,
+  voicingSignature,
+  voicingChordName,
+  preferenceVersion = 0,
+  onVoicingChange,
+  compact = false,
+  onExploreMore,
+}: ChordDiagramProps) {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [positions, setPositions] = useState<ChordPosition[]>([])
   const [maxResults, setMaxResults] = useState(compact ? 6 : 16)
   const [maxFret, setMaxFret] = useState(18)
   const [isVisible, setIsVisible] = useState(!compact)
+  const [resolvedSignatureIndex, setResolvedSignatureIndex] = useState<number | null>(null)
 
   useEffect(() => {
     if (!compact) {
@@ -148,44 +162,49 @@ function ChordDiagram({ chordName, displayName, voicingIndex, onVoicingChange, c
   useEffect(() => {
     if (!isVisible) return
 
-    const requestedResults = Math.max(maxResults, voicingIndex + 1)
+    const preferredIndex = findPreferredVoicingIndex(chordName, voicingSignature, voicingChordName, { maxFret, maxSpan: 5 })
+    const requestedResults = Math.max(maxResults, voicingIndex + 1, preferredIndex !== null ? preferredIndex + 1 : 0)
     const pos = resolveChordVoicings(chordName, { maxResults: requestedResults, maxFret, maxSpan: 5 })
+    setResolvedSignatureIndex(preferredIndex)
     setPositions(pos)
-  }, [chordName, isVisible, maxResults, maxFret, voicingIndex])
+  }, [chordName, isVisible, maxResults, maxFret, voicingIndex, voicingSignature, voicingChordName, preferenceVersion])
 
   useEffect(() => {
     setMaxResults(compact ? 6 : 16)
     setMaxFret(18)
+    setResolvedSignatureIndex(null)
   }, [chordName, compact])
+
+  const effectiveVoicingIndex = resolvedSignatureIndex ?? voicingIndex
 
   useEffect(() => {
     if (!isVisible) return
     if (!containerRef.current || positions.length === 0) return
 
-    const safeIndex = Math.min(voicingIndex, positions.length - 1)
+    const safeIndex = Math.min(effectiveVoicingIndex, positions.length - 1)
     const position = positions[safeIndex]
 
     if (position) {
       renderChordDiagram(containerRef.current, position, chordName, compact, displayName)
     }
-  }, [chordName, displayName, voicingIndex, positions, compact, isVisible])
+  }, [chordName, displayName, effectiveVoicingIndex, positions, compact, isVisible])
 
   useEffect(() => {
     if (positions.length === 0) return
 
     const maxIndex = positions.length - 1
-    if (voicingIndex > maxIndex) {
+    if (effectiveVoicingIndex > maxIndex) {
       onVoicingChange(maxIndex)
     }
-  }, [positions, voicingIndex, onVoicingChange])
+  }, [positions, effectiveVoicingIndex, onVoicingChange])
 
   useEffect(() => {
-    if (voicingIndex >= maxResults) {
-      setMaxResults(voicingIndex + 1)
+    if (effectiveVoicingIndex >= maxResults) {
+      setMaxResults(effectiveVoicingIndex + 1)
     }
-  }, [voicingIndex, maxResults])
+  }, [effectiveVoicingIndex, maxResults])
 
-  const safeIndex = Math.min(voicingIndex, Math.max(positions.length - 1, 0))
+  const safeIndex = Math.min(effectiveVoicingIndex, Math.max(positions.length - 1, 0))
   const hasMultiple = !compact && positions.length > 1
   const canSearchMore = !compact && Boolean(chordName)
 
@@ -228,37 +247,58 @@ function ChordDiagram({ chordName, displayName, voicingIndex, onVoicingChange, c
         </div>
       )}
       {hasMultiple && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div
+          style={{
+            width: '100%',
+            display: 'grid',
+            gridTemplateColumns: '1fr auto 1fr',
+            alignItems: 'center',
+            gap: '8px',
+          }}
+        >
           <button
             onClick={() => onVoicingChange(Math.max(0, safeIndex - 1))}
             disabled={safeIndex === 0}
             style={{
-              padding: '4px 10px',
-              border: '1px solid #ccc',
-              borderRadius: '4px',
-              backgroundColor: safeIndex === 0 ? '#f5f5f5' : 'white',
+              justifySelf: 'stretch',
+              padding: '8px 10px',
+              border: '1px solid #d1d5db',
+              borderRadius: '8px',
+              backgroundColor: safeIndex === 0 ? '#f3f4f6' : 'white',
               cursor: safeIndex === 0 ? 'not-allowed' : 'pointer',
-              fontSize: '16px',
+              fontSize: '12px',
+              fontWeight: 600,
+              color: safeIndex === 0 ? '#9ca3af' : '#374151',
             }}
           >
-            ←
+            前へ
           </button>
-          <span style={{ fontSize: '12px', color: '#666' }}>
+          <span
+            style={{
+              fontSize: '12px',
+              color: '#4b5563',
+              fontVariantNumeric: 'tabular-nums',
+              whiteSpace: 'nowrap',
+            }}
+          >
             {safeIndex + 1} / {positions.length}
           </span>
           <button
             onClick={() => onVoicingChange(Math.min(positions.length - 1, safeIndex + 1))}
             disabled={safeIndex === positions.length - 1}
             style={{
-              padding: '4px 10px',
-              border: '1px solid #ccc',
-              borderRadius: '4px',
-              backgroundColor: safeIndex === positions.length - 1 ? '#f5f5f5' : 'white',
+              justifySelf: 'stretch',
+              padding: '8px 10px',
+              border: '1px solid #d1d5db',
+              borderRadius: '8px',
+              backgroundColor: safeIndex === positions.length - 1 ? '#f3f4f6' : 'white',
               cursor: safeIndex === positions.length - 1 ? 'not-allowed' : 'pointer',
-              fontSize: '16px',
+              fontSize: '12px',
+              fontWeight: 600,
+              color: safeIndex === positions.length - 1 ? '#9ca3af' : '#374151',
             }}
           >
-            →
+            次へ
           </button>
         </div>
       )}
@@ -273,13 +313,15 @@ function ChordDiagram({ chordName, displayName, voicingIndex, onVoicingChange, c
             setMaxFret(18)
           }}
           style={{
-            padding: '4px 10px',
+            width: '100%',
+            padding: '8px 12px',
             border: '1px solid #d1d5db',
-            borderRadius: '999px',
+            borderRadius: '8px',
             backgroundColor: 'white',
             color: '#4b5563',
             cursor: 'pointer',
             fontSize: '12px',
+            fontWeight: 600,
           }}
         >
           {onExploreMore ? '候補を一覧表示' : 'もっと候補を探す'}
