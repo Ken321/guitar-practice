@@ -200,9 +200,14 @@ function ChordDiagram({
   useEffect(() => {
     if (!isVisible) return
 
-    const preferredIndex = findPreferredVoicingIndex(chordName, voicingSignature, voicingChordName, { maxFret, maxSpan: 5 })
+    // When a saved voicing exists for a specific chord name (voicingChordName), use that chord's
+    // voicing list for both lookup and display. This handles the case where the display key
+    // is different from the original key (transposition): the stored voicingChordName is the
+    // original chord name, and its voicing list contains the saved fingering.
+    const lookupChordName = (voicingChordName && voicingSignature) ? voicingChordName : chordName
+    const preferredIndex = findPreferredVoicingIndex(lookupChordName, voicingSignature, voicingChordName, { maxFret, maxSpan: 5 })
     const requestedResults = Math.max(maxResults, voicingIndex + 1, preferredIndex !== null ? preferredIndex + 1 : 0)
-    const pos = resolveChordVoicings(chordName, { maxResults: requestedResults, maxFret, maxSpan: 5 })
+    const pos = resolveChordVoicings(lookupChordName, { maxResults: requestedResults, maxFret, maxSpan: 5 })
     setResolvedSignatureIndex(preferredIndex)
     setPositions(pos)
   }, [chordName, isVisible, maxResults, maxFret, voicingIndex, voicingSignature, voicingChordName, preferenceVersion])

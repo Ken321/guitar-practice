@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Song, DisplayMode, SectionCreate, ChordPlacement } from '../types'
-import { getSong, getVoicingPreferences, updateSong, updateSongContent, updateChordVoicing } from '../api/client'
+import { getSong, getVoicingPreferences, updateSong, updateSongContent, updateChordVoicing, invalidateVoicingPreferencesCache } from '../api/client'
 import SectionView from '../components/SectionView'
 import ChordPopover from '../components/ChordPopover'
 import SongEditor from '../components/SongEditor'
@@ -212,22 +212,35 @@ export default function ChordSheet() {
 
   const handleChordClick = useCallback((chord: ChordPlacement, event: React.MouseEvent) => {
     event.stopPropagation()
+    // Always use the original chord name (from song.sections) for voicing lookup and save.
+    // chord.chord_name here comes from transposedSections and may be transposed;
+    // findChordPlacementById returns the chord from song.sections with the original name.
+    const originalChordName = findChordPlacementById(song, chord.id)?.chord_name ?? chord.chord_name
     const resolvedInitialVoicingIndex = findPreferredVoicingIndex(
-      chord.chord_name,
+      originalChordName,
       chord.preferred_voicing_signature,
       chord.preferred_voicing_chord_name,
       { maxFret: 18, maxSpan: 5 },
     ) ?? chord.preferred_voicing
+
+    // Build display name: degree label if degree mode, transposed chord name if key differs, otherwise undefined
+    let displayName: string | undefined
+    if (displayMode === 'degree') {
+      displayName = chordToDegree(chord.chord_name, displayKey)
+    } else if (chord.chord_name !== originalChordName) {
+      displayName = chord.chord_name
+    }
+
     setPopover({
       chordId: chord.id,
-      chordName: chord.chord_name,
-      displayName: displayMode === 'degree' ? chordToDegree(chord.chord_name, displayKey) : undefined,
+      chordName: originalChordName,
+      displayName,
       initialVoicingIndex: resolvedInitialVoicingIndex,
       initialVoicingSignature: chord.preferred_voicing_signature,
       initialVoicingChordName: chord.preferred_voicing_chord_name,
       position: { x: event.clientX, y: event.clientY },
     })
-  }, [displayKey, displayMode, voicingPreferenceVersion])
+  }, [displayKey, displayMode, song, voicingPreferenceVersion])
 
   async function handleSaveVoicing(
     chordId: string,
@@ -237,13 +250,27 @@ export default function ChordSheet() {
   ) {
     if (!id || !song) return
 
-    const previousChord = findChordPlacementById(song, chordId)
+    const primaryChord = findChordPlacementById(song, chordId)
+    const targetChordName = primaryChord?.chord_name
 
-    const updatedChord = await updateChordVoicing(id, chordId, voicingIndex, voicingSignature, voicingChordName, true)
+    // Propagate to all chords with the same chord_name in the song
+    const allSameNameChordIds = targetChordName
+      ? song.sections.flatMap((s) => s.lines.flatMap((l) => l.chords
+        .filter((c) => c.chord_name === targetChordName)
+        .map((c) => c.id)))
+      : [chordId]
 
+    const updatedChords = await Promise.all(
+      allSameNameChordIds.map((cId) =>
+        updateChordVoicing(id, cId, voicingIndex, voicingSignature, voicingChordName, true)
+      )
+    )
+    const updatedById = new Map(allSameNameChordIds.map((cId, i) => [cId, updatedChords[i]]))
+
+    invalidateVoicingPreferencesCache()
     setVoicingPreferenceVersion(recordVoicingPreference({
-      previousChordName: previousChord?.has_custom_voicing ? previousChord.preferred_voicing_chord_name : null,
-      previousSignature: previousChord?.has_custom_voicing ? previousChord.preferred_voicing_signature : null,
+      previousChordName: primaryChord?.has_custom_voicing ? primaryChord.preferred_voicing_chord_name : null,
+      previousSignature: primaryChord?.has_custom_voicing ? primaryChord.preferred_voicing_signature : null,
       chordName: voicingChordName,
       signature: voicingSignature,
     }))
@@ -255,9 +282,10 @@ export default function ChordSheet() {
           ...section,
           lines: section.lines.map((line) => ({
             ...line,
-            chords: line.chords.map((chord) =>
-              chord.id === chordId ? { ...chord, ...updatedChord } : chord
-            ),
+            chords: line.chords.map((chord) => {
+              const updated = updatedById.get(chord.id)
+              return updated ? { ...chord, ...updated } : chord
+            }),
           })),
         })),
       }

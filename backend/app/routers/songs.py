@@ -4,7 +4,7 @@ from typing import List
 from uuid import UUID
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session, load_only, selectinload
+from sqlalchemy.orm import Session, load_only, joinedload
 from ..database import get_db
 from .. import models, schemas
 from ..music_theory import normalize_capo_value, resolve_song_keys
@@ -86,9 +86,9 @@ def get_song_or_404(song_id: UUID, db: Session) -> models.Song:
     song = (
         db.query(models.Song)
         .options(
-            selectinload(models.Song.sections)
-            .selectinload(models.Section.lines)
-            .selectinload(models.Line.chords)
+            joinedload(models.Song.sections)
+            .joinedload(models.Section.lines)
+            .joinedload(models.Line.chords)
         )
         .filter(models.Song.id == song_id)
         .first()

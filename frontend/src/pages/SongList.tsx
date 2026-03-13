@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { SongListItem } from '../types'
-import { getSongs, deleteSong } from '../api/client'
+import { getSongs, getSong, deleteSong } from '../api/client'
 
 export default function SongList() {
   const navigate = useNavigate()
@@ -222,6 +222,7 @@ export default function SongList() {
                       backgroundColor: isSelected ? 'var(--theme-color-soft)' : 'white',
                     }}
                     onMouseEnter={(e) => {
+                      getSong(song.id).catch(() => {})
                       e.currentTarget.style.backgroundColor = isSelected ? 'var(--theme-color-soft-strong)' : '#f8f9fa'
                     }}
                     onMouseLeave={(e) => {

@@ -20,32 +20,61 @@ const api = axios.create({
   },
 })
 
+const CACHE_TTL = 60_000 // 60秒
+
+let songListCache: { data: SongListItem[]; timestamp: number } | null = null
+const songDetailCache = new Map<string, { data: Song; timestamp: number }>()
+let voicingPreferencesCache: { data: VoicingPreference[]; timestamp: number } | null = null
+
+function invalidateSongListCache() {
+  songListCache = null
+}
+
+function invalidateSongDetailCache(id: string) {
+  songDetailCache.delete(id)
+}
+
 export async function getSongs(): Promise<SongListItem[]> {
+  if (songListCache && Date.now() - songListCache.timestamp < CACHE_TTL) {
+    return songListCache.data
+  }
   const response = await api.get<SongListItem[]>('/api/songs')
+  songListCache = { data: response.data, timestamp: Date.now() }
   return response.data
 }
 
 export async function getSong(id: string): Promise<Song> {
+  const cached = songDetailCache.get(id)
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.data
+  }
   const response = await api.get<Song>(`/api/songs/${id}`)
+  songDetailCache.set(id, { data: response.data, timestamp: Date.now() })
   return response.data
 }
 
 export async function createSong(data: SongCreate): Promise<Song> {
   const response = await api.post<Song>('/api/songs', data)
+  invalidateSongListCache()
   return response.data
 }
 
 export async function updateSong(id: string, data: SongUpdate): Promise<Song> {
   const response = await api.put<Song>(`/api/songs/${id}`, data)
+  invalidateSongListCache()
+  invalidateSongDetailCache(id)
   return response.data
 }
 
 export async function deleteSong(id: string): Promise<void> {
   await api.delete(`/api/songs/${id}`)
+  invalidateSongListCache()
+  invalidateSongDetailCache(id)
 }
 
 export async function updateSongContent(id: string, sections: SectionCreate[]): Promise<Song> {
   const response = await api.put<Song>(`/api/songs/${id}/content`, { sections })
+  invalidateSongDetailCache(id)
   return response.data
 }
 
@@ -55,8 +84,16 @@ export async function scrapeSong(data: ScrapeRequest): Promise<ScrapeResponse> {
 }
 
 export async function getVoicingPreferences(): Promise<VoicingPreference[]> {
+  if (voicingPreferencesCache && Date.now() - voicingPreferencesCache.timestamp < CACHE_TTL) {
+    return voicingPreferencesCache.data
+  }
   const response = await api.get<VoicingPreference[]>('/api/songs/voicing-preferences')
+  voicingPreferencesCache = { data: response.data, timestamp: Date.now() }
   return response.data
+}
+
+export function invalidateVoicingPreferencesCache() {
+  voicingPreferencesCache = null
 }
 
 export async function updateChordVoicing(
@@ -73,6 +110,7 @@ export async function updateChordVoicing(
     preferred_voicing_signature: preferredVoicingSignature ?? null,
     preferred_voicing_chord_name: preferredVoicingChordName ?? null,
   })
+  invalidateSongDetailCache(songId)
   return response.data
 }
 
