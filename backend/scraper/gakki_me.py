@@ -174,10 +174,15 @@ class GakkiMeScraper(ScraperBase):
                             const chords = [];
                             if (prevChordLine) {
                                 const chordMatches = [...prevChordLine.matchAll(/([A-G][#b]?(m|maj|min|dim|aug|sus|add|M|7|9|11|13)*(\/[A-G][#b]?)?)/g)];
+                                let lastPos = -1;
                                 for (const match of chordMatches) {
                                     const ratio = match.index / Math.max(prevChordLine.length, 1);
-                                    const position = Math.floor(ratio * Math.max(text.length, 1));
+                                    let position = Math.floor(ratio * Math.max(text.length, 1));
+                                    if (position <= lastPos) {
+                                        position = lastPos + 1;
+                                    }
                                     chords.push({ position, chord_name: match[0] });
+                                    lastPos = position;
                                 }
                             }
                             currentSection.lines.push({ lyrics: text, chords });

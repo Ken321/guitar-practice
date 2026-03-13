@@ -86,60 +86,82 @@
 
 ## ローカル開発の起動方法
 
-### 前提条件
+### 必要なもの
+- Python 3.11以上
+- Node.js 18以上
+- PostgreSQLの接続URL（Neonなどで事前に用意してください）
 
-- Python 3.11+
-- Node.js 18+
-- PostgreSQL（または Neon アカウント）
+---
 
-### バックエンド
+### 初回セットアップ (環境構築)
 
+プロジェクトをクローンした直後に**1回だけ**行う作業です。
+
+#### 1. バックエンドの初期設定
 ```bash
 cd backend
 
-# 仮想環境のセットアップ
+# 仮想環境(.venv)を作成して有効化
 python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+source .venv/bin/activate  # Windowsの場合は .venv\Scripts\activate
 
-# 依存パッケージのインストール
+# 必要なパッケージとスクレイピング要件のインストール
 pip install -r requirements.txt
 playwright install chromium
 
-# 環境変数の設定
+# 環境変数ファイルの作成
 cp .env.example .env
-# .env を編集して DATABASE_URL を設定
+```
+👉 **重要:** `backend/.env` をエディタで開き、`DATABASE_URL` にご自身が用意したデータベースの接続URLを上書き設定してください。これを忘れるとDB接続エラーで起動しません。
+
+#### 2. フロントエンドの初期設定
+```bash
+cd frontend
+
+# パッケージのインストール
+npm install
+```
+
+---
+
+### 日々の起動方法 (開発サーバーの実行)
+
+セットアップが終わった後、開発を行うために毎回実行するコマンドです。バックエンドとフロントエンドの両方を起動する必要があります（ターミナルを2つ開くと便利です）。
+
+#### バックエンドの起動
+```bash
+cd backend
+
+# 仮想環境の有効化 (ターミナルを開くたびに必要です)
+source .venv/bin/activate  # Windowsの場合は .venv\Scripts\activate
 
 # 開発サーバーの起動
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
+- APIサーバー: `http://localhost:8000`
+- APIドキュメント(Swagger): `http://localhost:8000/docs`
 
-- API: http://localhost:8000
-- Swagger UI: http://localhost:8000/docs
-
-### フロントエンド
-
+#### フロントエンドの起動
 ```bash
 cd frontend
-
-# 依存パッケージのインストール
-npm install
 
 # 開発サーバーの起動
 npm run dev
 ```
+- Webアプリ: `http://localhost:3000` (または表示されたポート)
+- ※バックエンドへのAPI通信は、Viteの設定によっ自動で `localhost:8000` へ転送されます。
 
-- フロント: http://localhost:3000
-- `/api` へのリクエストは Vite プロキシ経由でバックエンドに転送される
+---
 
-### 環境変数
+### 環境変数ファイルについて
 
-**backend/.env**
-```
+**`backend/.env`** (ローカル開発で必須)
+```env
 DATABASE_URL=postgresql://user:password@ep-xxx.us-east-1.aws.neon.tech/guitar_practice?sslmode=require
 ```
 
-**frontend/.env.local**（本番用、ローカル開発では不要）
-```
+**`frontend/.env.local`** (ローカル開発では**不要**・本番デプロイ時のみ使用)
+```env
 VITE_API_URL=https://your-backend.railway.app
 ```
 

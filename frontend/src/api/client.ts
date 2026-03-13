@@ -12,7 +12,9 @@ import type {
 } from '../types'
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:8000',
+  // Use VITE_API_URL if provided (e.g., in production), otherwise use empty string
+  // to rely on Vite's proxy during local development, avoiding CORS issues.
+  baseURL: import.meta.env.VITE_API_URL ?? '',
   headers: {
     'Content-Type': 'application/json',
   },

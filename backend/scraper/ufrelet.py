@@ -181,6 +181,7 @@ class UFretScraper(ScraperBase):
                             let lyrics = '';
                             const chords = [];
                             let charPos = 0;
+                            let lastPos = -1;
 
                             // Each p.chord = one chord + its associated lyric segment
                             const chordSegments = child.querySelectorAll('p.chord');
@@ -197,7 +198,12 @@ class UFretScraper(ScraperBase):
                                 }
 
                                 if (chordName && chordName.match(/^[A-G]/)) {
-                                    chords.push({ position: charPos, chord_name: chordName });
+                                    let pos = charPos;
+                                    if (pos <= lastPos) {
+                                        pos = lastPos + 1;
+                                    }
+                                    chords.push({ position: pos, chord_name: chordName });
+                                    lastPos = pos;
                                 }
                                 lyrics += segLyric;
                                 charPos += segLyric.length;
@@ -267,6 +273,7 @@ class UFretScraper(ScraperBase):
                 lyric_line = lines[i + 1].strip() if i + 1 < len(lines) else ""
 
                 chords = []
+                last_pos = -1
                 chord_matches = list(re.finditer(
                     r'([A-G][#b]?(m|maj|min|dim|aug|sus|add|M|7|9|11|13)*(\/[A-G][#b]?)?)',
                     chord_line
@@ -277,7 +284,12 @@ class UFretScraper(ScraperBase):
                         position = int(ratio * len(lyric_line))
                     else:
                         position = len(chords)
+                        
+                    if position <= last_pos:
+                        position = last_pos + 1
+                        
                     chords.append({"position": position, "chord_name": match.group(0)})
+                    last_pos = position
 
                 if lyric_line or chords:
                     current_section["lines"].append({"lyrics": lyric_line, "chords": chords})

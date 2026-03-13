@@ -12,6 +12,11 @@ export interface ChordPosition {
   capo?: boolean
 }
 
+export interface CustomChordPosition extends ChordPosition {
+  isCustom: boolean
+  signature: string
+}
+
 interface ChordPositionWithMeta extends ChordPosition {
   absoluteFrets: number[]
   source: 'db' | 'generated'
@@ -78,7 +83,7 @@ const SUFFIX_ALIASES: Record<string, string[]> = {
   '7': ['7', 'dom7'],
   m7: ['m7', 'min7', 'minor7'],
   maj7: ['maj7', 'major7', 'maj7#5', 'M7'],
-  dim: ['dim', 'diminished'],
+  dim: ['dim', 'diminished', 'dim7'],
   dim7: ['dim7'],
   aug: ['aug', 'augmented'],
   aug7: ['aug7'],
@@ -1056,4 +1061,67 @@ export async function resolveChordVoicingsAsync(
   const generatedCandidates = Array.from(bestBySignature.values()).sort((a, b) => b.score - a.score)
   const ranked = rankAllCandidates(normalizedChordName, dbCandidates, generatedCandidates)
   return writeRankedVoicingsToCache(cacheKey, ranked).slice(0, maxResults)
+}
+
+/**
+ * Validates if the given string is a valid custom fret signature.
+ * e.g. "x,x,1,2,1,2" or "-,-,1,2,1,2" or "x,-,1,2,x,x"
+ * It must have exactly 6 parts, containing numbers or 'x'/'-' for mute.
+ */
+export function isValidCustomFretSignature(signature: string): boolean {
+  if (!signature) return false
+  const parts = signature.toLowerCase().split(',')
+  if (parts.length !== 6) return false
+  
+  return parts.every(part => {
+    const trimmed = part.trim()
+    if (trimmed === 'x' || trimmed === '-') return true
+    const num = parseInt(trimmed, 10)
+    return !isNaN(num) && num >= 0 && num <= 24
+  })
+}
+
+/**
+ * Parses a custom fret signature into a playable CustomChordPosition format if valid.
+ */
+export function parseCustomFretSignature(signature: string): CustomChordPosition | null {
+  if (!isValidCustomFretSignature(signature)) return null
+  
+  const parts = signature.toLowerCase().split(',')
+  const absoluteFrets = parts.map(part => {
+    const trimmed = part.trim()
+    if (trimmed === 'x' || trimmed === '-') return -1
+    return parseInt(trimmed, 10)
+  })
+
+  // Calculate generic base fret
+  const positiveFrets = absoluteFrets.filter((fret) => fret > 0)
+  const minPositiveFret = positiveFrets.length > 0 ? Math.min(...positiveFrets) : 1
+  const baseFret = minPositiveFret > 1 ? minPositiveFret : 1
+  
+  // Calculate relative frets for diagram
+  const frets = absoluteFrets.map((fret) => {
+    if (fret <= 0) return fret
+    if (baseFret === 1) return fret
+    return fret - baseFret + 1
+  })
+  
+  // Create rough approximations of midi/fingers/barres for visual purposes
+  const midi = absoluteFrets
+    .map((fret, stringIndex) => (fret >= 0 ? OPEN_STRING_MIDI[stringIndex] + fret : null))
+    .filter((value): value is number => value !== null)
+    
+  // A naive finger assignment matching the frets for now,
+  // since this is purely a visual overwrite and custom
+  const fingers = frets.map(fret => fret <= 0 ? 0 : fret)
+  
+  return {
+    frets,
+    fingers,
+    barres: [],
+    baseFret,
+    midi,
+    isCustom: true,
+    signature: absoluteFrets.join(','),
+  }
 }
