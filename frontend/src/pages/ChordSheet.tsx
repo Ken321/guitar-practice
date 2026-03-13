@@ -215,7 +215,7 @@ export default function ChordSheet() {
     // Always use the original chord name (from song.sections) for voicing lookup and save.
     // chord.chord_name here comes from transposedSections and may be transposed;
     // findChordPlacementById returns the chord from song.sections with the original name.
-    const originalChordName = findChordPlacementById(song, chord.id)?.chord_name ?? chord.chord_name
+    const originalChordName = (song ? findChordPlacementById(song, chord.id) : null)?.chord_name ?? chord.chord_name
     const resolvedInitialVoicingIndex = findPreferredVoicingIndex(
       originalChordName,
       chord.preferred_voicing_signature,
