@@ -324,11 +324,9 @@ export default function ChordVoicingModal({
               {positions.map((position, displayIndex) => {
                 const isCustomDisplay = (position as any).isCustom
 
-                // Re-align the index to match the actual element in basePositions
-                let positionIndex = displayIndex
-                if (positions.some(p => (p as any).isCustom)) {
-                  positionIndex = displayIndex - 1
-                }
+                // Always use the index in basePositions so that selectedIndex
+                // correctly references basePositions even when filtering is active.
+                const positionIndex = isCustomDisplay ? -1 : basePositions.indexOf(position)
 
                 const selected = isCustomDisplay ? selectedIndex === -1 : positionIndex === selectedIndex
 
