@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Song, DisplayMode, SectionCreate, ChordPlacement } from '../types'
-import { getSong, getVoicingPreferences, updateSong, updateSongContent, updateChordVoicing, invalidateVoicingPreferencesCache } from '../api/client'
+import { getSong, getVoicingPreferences, updateSong, updateSongContent, updateChordVoicing, invalidateVoicingPreferencesCache, estimateKey } from '../api/client'
 import SectionView from '../components/SectionView'
 import ChordPopover from '../components/ChordPopover'
 import SongEditor from '../components/SongEditor'
-import { COMMON_KEYS, transposeChord, chordToDegree, transposeKeyName } from '../utils/degree'
+import { COMMON_KEYS, transposeChord, chordToDegree, transposeKeyName, getChromaticKeysFrom, getKeyChroma } from '../utils/degree'
 import {
   findPreferredVoicingIndex,
   getVoicingPreferenceVersion,
@@ -158,6 +158,7 @@ export default function ChordSheet() {
   const [isEditing, setIsEditing] = useState(false)
   const [popover, setPopover] = useState<PopoverState | null>(null)
   const [saving, setSaving] = useState(false)
+  const [isEstimatingKey, setIsEstimatingKey] = useState(false)
   const [voicingPreferenceVersion, setVoicingPreferenceVersion] = useState(getVoicingPreferenceVersion())
   const [draftTitle, setDraftTitle] = useState('')
   const [draftArtist, setDraftArtist] = useState('')
@@ -165,6 +166,53 @@ export default function ChordSheet() {
   const [draftCapo, setDraftCapo] = useState(0)
   const [draftSections, setDraftSections] = useState<SectionCreate[]>([])
   const draftChartKey = useMemo(() => transposeKeyName(draftOriginalKey, -draftCapo), [draftOriginalKey, draftCapo])
+  const chromaticKeys = useMemo(() => song ? getChromaticKeysFrom(song.key) : COMMON_KEYS, [song])
+
+  // Auto-scroll: level 1 = 1 px/s, level 10 = 50 px/s (linear)
+  const [isAutoScrolling, setIsAutoScrolling] = useState(false)
+  const [scrollLevel, setScrollLevel] = useState(5)
+  const scrollSpeed = 1 + (scrollLevel - 1) * (49 / 9)
+  const rafRef = useRef<number | null>(null)
+  const lastTimeRef = useRef<number | null>(null)
+  const accumulatedScrollRef = useRef<number>(0)
+
+  useEffect(() => {
+    if (!isAutoScrolling) {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+      lastTimeRef.current = null
+      accumulatedScrollRef.current = 0
+      return
+    }
+
+    function step(timestamp: number) {
+      if (lastTimeRef.current === null) {
+        lastTimeRef.current = timestamp
+      }
+      const delta = timestamp - lastTimeRef.current
+      lastTimeRef.current = timestamp
+
+      const atBottom = window.scrollY + window.innerHeight >= document.body.scrollHeight - 1
+      if (atBottom) {
+        setIsAutoScrolling(false)
+        return
+      }
+
+      // Accumulate fractional pixels so sub-pixel speeds actually work
+      accumulatedScrollRef.current += scrollSpeed * (delta / 1000)
+      const pixels = Math.floor(accumulatedScrollRef.current)
+      if (pixels >= 1) {
+        window.scrollBy(0, pixels)
+        accumulatedScrollRef.current -= pixels
+      }
+
+      rafRef.current = requestAnimationFrame(step)
+    }
+
+    rafRef.current = requestAnimationFrame(step)
+    return () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+    }
+  }, [isAutoScrolling, scrollSpeed])
 
   useEffect(() => {
     if (id) loadSong(id)
@@ -340,6 +388,18 @@ export default function ChordSheet() {
     }))
   }, [song, displayKey])
 
+  async function handleEstimateKey() {
+    setIsEstimatingKey(true)
+    try {
+      const estimated = await estimateKey(draftSections, draftCapo)
+      if (estimated) setDraftOriginalKey(estimated)
+    } catch {
+      // ignore
+    } finally {
+      setIsEstimatingKey(false)
+    }
+  }
+
   async function handleEditorSave(sections: SectionCreate[], meta: { title: string; artist: string; original_key: string; capo: number }) {
     if (!song || !id) return
     setSaving(true)
@@ -366,6 +426,7 @@ export default function ChordSheet() {
     setDraftCapo(song.capo)
     setDraftSections(songToEditableSections(song))
     setPopover(null)
+    setIsAutoScrolling(false)
     setIsEditing(true)
   }
 
@@ -410,11 +471,11 @@ export default function ChordSheet() {
         flexWrap: 'wrap',
         gap: '12px',
         padding: '16px',
-        position: isEditing ? 'sticky' : 'static',
-        top: isEditing ? 0 : undefined,
-        zIndex: isEditing ? 20 : undefined,
-        backgroundColor: isEditing ? '#f5f5f5' : 'transparent',
-        borderBottom: isEditing ? '1px solid #e5e7eb' : 'none',
+        position: 'sticky',
+        top: 0,
+        zIndex: 20,
+        backgroundColor: isEditing ? '#f5f5f5' : 'white',
+        borderBottom: '1px solid #e5e7eb',
         marginBottom: '16px',
       }}>
         {isEditing ? (
@@ -432,15 +493,34 @@ export default function ChordSheet() {
                 placeholder="アーティスト名"
                 style={{ padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '14px', backgroundColor: 'white' }}
               />
-              <select
-                value={draftOriginalKey}
-                onChange={(event) => setDraftOriginalKey(event.target.value)}
-                style={{ padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '14px', backgroundColor: 'white' }}
-              >
-                {COMMON_KEYS.map((keyOption) => (
-                  <option key={keyOption} value={keyOption}>原曲キー: {keyOption}</option>
-                ))}
-              </select>
+              <div style={{ display: 'flex', gap: '4px' }}>
+                <select
+                  value={draftOriginalKey}
+                  onChange={(event) => setDraftOriginalKey(event.target.value)}
+                  style={{ flex: 1, padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '14px', backgroundColor: 'white', minWidth: 0 }}
+                >
+                  {COMMON_KEYS.map((keyOption) => (
+                    <option key={keyOption} value={keyOption}>原曲キー: {keyOption}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={handleEstimateKey}
+                  disabled={isEstimatingKey}
+                  title="コードとカポからキーを推定"
+                  style={{
+                    padding: '8px 10px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    backgroundColor: 'white',
+                    cursor: isEstimatingKey ? 'not-allowed' : 'pointer',
+                    whiteSpace: 'nowrap',
+                    color: '#555',
+                  }}
+                >
+                  {isEstimatingKey ? '…' : '推定'}
+                </button>
+              </div>
               <input
                 value={draftChartKey}
                 readOnly
@@ -509,11 +589,16 @@ export default function ChordSheet() {
                   onChange={e => setDisplayKey(e.target.value)}
                   style={{ padding: '6px 10px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '14px', backgroundColor: 'white' }}
                 >
-                  {COMMON_KEYS.map(k => (
-                    <option key={k} value={k}>
-                      {k}{k === song.key ? ' (譜面)' : ''}
-                    </option>
-                  ))}
+                  {chromaticKeys.map(k => {
+                    const isOriginal = !!song.original_key
+                      && getKeyChroma(k) === getKeyChroma(song.original_key)
+                      && k.endsWith('m') === song.original_key.endsWith('m')
+                    return (
+                      <option key={k} value={k}>
+                        {k}{k === song.key ? '（譜面）' : ''}{isOriginal ? '（原曲）' : ''}
+                      </option>
+                    )
+                  })}
                 </select>
               </div>
 
@@ -566,6 +651,37 @@ export default function ChordSheet() {
               >
                 編集
               </button>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: 'auto' }}>
+                <span style={{ fontSize: '12px', color: '#888', whiteSpace: 'nowrap' }}>速度 {scrollLevel}</span>
+                <input
+                  type="range"
+                  min={1}
+                  max={10}
+                  step={1}
+                  value={scrollLevel}
+                  onChange={e => setScrollLevel(Number(e.target.value))}
+                  style={{ width: '80px', accentColor: 'var(--theme-color)', cursor: 'pointer' }}
+                  title="スクロール速度"
+                />
+                <button
+                  onClick={() => setIsAutoScrolling(v => !v)}
+                  style={{
+                    padding: '6px 12px',
+                    backgroundColor: isAutoScrolling ? 'var(--theme-color)' : 'white',
+                    color: isAutoScrolling ? 'var(--theme-color-contrast)' : '#555',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    fontWeight: isAutoScrolling ? 'bold' : 'normal',
+                    touchAction: 'manipulation',
+                  }}
+                  title="自動スクロール"
+                >
+                  {isAutoScrolling ? '■ 停止' : '▶ 自動'}
+                </button>
+              </div>
             </div>
           </>
         )}
@@ -594,7 +710,11 @@ export default function ChordSheet() {
           )}
         </div>
       ) : (
-        <div>
+        // eslint-disable-next-line jsx-a11y/click-events-have-key-events
+        <div
+          onClick={() => setIsAutoScrolling(v => !v)}
+          style={{ cursor: isAutoScrolling ? 'pointer' : 'pointer' }}
+        >
           {transposedSections.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '48px', color: '#999', backgroundColor: 'white' }}>
               コードシートがまだありません。「編集」ボタンから追加してください。

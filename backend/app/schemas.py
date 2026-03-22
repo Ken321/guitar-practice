@@ -133,6 +133,16 @@ class SongContentUpdate(BaseModel):
     sections: List[SectionCreate]
 
 
+# Key estimation schemas
+class EstimateKeyRequest(BaseModel):
+    sections: List[SectionCreate]
+    capo: int = 0
+
+
+class EstimateKeyResponse(BaseModel):
+    original_key: Optional[str] = None
+
+
 # Scraper schemas
 class ScrapeRequest(BaseModel):
     title: Optional[str] = None

@@ -150,3 +150,27 @@ export const COMMON_KEYS = [
   'Am', 'Em', 'Bm', 'F#m', 'C#m', 'G#m',
   'Dm', 'Gm', 'Cm', 'Fm', 'Bbm'
 ]
+
+// Chromatic order (index == chroma value)
+const CHROMATIC_MAJOR = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B']
+const CHROMATIC_MINOR = ['Cm', 'C#m', 'Dm', 'Ebm', 'Em', 'Fm', 'F#m', 'Gm', 'G#m', 'Am', 'Bbm', 'Bm']
+
+/** Returns the chroma (0-11) of a key name, or null if unrecognised. */
+export function getKeyChroma(key: string): number | null {
+  if (!key) return null
+  const root = key.endsWith('m') ? key.slice(0, -1) : key
+  const chroma = Note.get(root).chroma
+  return chroma ?? null
+}
+
+/**
+ * Returns 12 keys in chromatic (semitone) order starting from startKey,
+ * preserving the major/minor mode of startKey.
+ */
+export function getChromaticKeysFrom(startKey: string): string[] {
+  const isMinor = startKey.endsWith('m')
+  const chromatic = isMinor ? CHROMATIC_MINOR : CHROMATIC_MAJOR
+  const chroma = getKeyChroma(startKey)
+  if (chroma == null) return chromatic
+  return [...chromatic.slice(chroma), ...chromatic.slice(0, chroma)]
+}

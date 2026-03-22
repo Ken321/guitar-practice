@@ -60,10 +60,12 @@ export default function ChordVoicingModal({
   const isSavedVoicingSelected = selectedIndex === savedVoicingIndex && (!customPosition || positions[0] !== customPosition)
 
   useEffect(() => {
-    let cancelled = false
-
     setSelectedIndex(initialVoicingIndex)
     setError(null)
+  }, [chordName, initialVoicingIndex])
+
+  useEffect(() => {
+    let cancelled = false
 
     async function loadPositions() {
       setLoading(true)
@@ -210,13 +212,13 @@ export default function ChordVoicingModal({
         >
           <label style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <span style={{ fontSize: '13px', fontWeight: 600, color: '#4b5563' }}>
-              独自の押さえ方を入力 (例: -,-,1,2,1,2 または 1,3,3,2,1,1)
+              独自の押さえ方を入力 (例: -12212 または -,-,1,2,1,2)
             </span>
             <input
               type="text"
               value={customInput}
               onChange={(e) => setCustomInput(e.target.value)}
-              placeholder="-,-,1,2,1,2"
+              placeholder="-12212 または -,-,1,2,1,2"
               style={{
                 padding: '10px 14px',
                 borderRadius: '8px',
@@ -229,7 +231,7 @@ export default function ChordVoicingModal({
           </label>
           {customInput && !customPosition && (
             <div style={{ marginTop: '6px', fontSize: '13px', color: '#dc2626' }}>
-              無効な形式です。「-,-,1,2,1,2」のように6弦分のフレットをカンマ区切りで入力してください
+              無効な形式です。「-12212」または「-,-,1,2,1,2」のように6弦分のフレットを入力してください
             </div>
           )}
         </div>

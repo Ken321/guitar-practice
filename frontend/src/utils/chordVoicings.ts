@@ -1064,15 +1064,30 @@ export async function resolveChordVoicingsAsync(
 }
 
 /**
+ * Normalizes a fret signature to comma-separated format.
+ * Accepts both comma-separated ("x,x,1,2,1,2") and compact no-comma format ("xx1212").
+ * In compact format each character is one string: 'x'/'-' for mute, '0'-'9' for fret.
+ */
+function normalizeSignature(signature: string): string {
+  const s = signature.trim()
+  if (s.includes(',')) return s
+  // Compact format: exactly 6 chars, each 'x', '-', or digit 0-9
+  if (/^[x\-0-9]{6}$/i.test(s)) {
+    return s.split('').join(',')
+  }
+  return s
+}
+
+/**
  * Validates if the given string is a valid custom fret signature.
- * e.g. "x,x,1,2,1,2" or "-,-,1,2,1,2" or "x,-,1,2,x,x"
- * It must have exactly 6 parts, containing numbers or 'x'/'-' for mute.
+ * Accepts comma-separated ("x,x,1,2,1,2" or "-,-,1,2,1,2") and
+ * compact no-comma format ("-12200" or "xx1212").
  */
 export function isValidCustomFretSignature(signature: string): boolean {
   if (!signature) return false
-  const parts = signature.toLowerCase().split(',')
+  const parts = normalizeSignature(signature).toLowerCase().split(',')
   if (parts.length !== 6) return false
-  
+
   return parts.every(part => {
     const trimmed = part.trim()
     if (trimmed === 'x' || trimmed === '-') return true
@@ -1086,8 +1101,8 @@ export function isValidCustomFretSignature(signature: string): boolean {
  */
 export function parseCustomFretSignature(signature: string): CustomChordPosition | null {
   if (!isValidCustomFretSignature(signature)) return null
-  
-  const parts = signature.toLowerCase().split(',')
+
+  const parts = normalizeSignature(signature).toLowerCase().split(',')
   const absoluteFrets = parts.map(part => {
     const trimmed = part.trim()
     if (trimmed === 'x' || trimmed === '-') return -1

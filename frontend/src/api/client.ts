@@ -78,6 +78,11 @@ export async function updateSongContent(id: string, sections: SectionCreate[]): 
   return response.data
 }
 
+export async function estimateKey(sections: SectionCreate[], capo: number): Promise<string | null> {
+  const response = await api.post<{ original_key: string | null }>('/api/songs/estimate-key', { sections, capo })
+  return response.data.original_key
+}
+
 export async function scrapeSong(data: ScrapeRequest): Promise<ScrapeResponse> {
   const response = await api.post<ScrapeResponse>('/api/scrape', data)
   return response.data

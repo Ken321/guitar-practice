@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, load_only, joinedload
 from ..database import get_db
 from .. import models, schemas
-from ..music_theory import normalize_capo_value, resolve_song_keys
+from ..music_theory import normalize_capo_value, resolve_song_keys, estimate_key_from_sections
 
 router = APIRouter(prefix="/songs", tags=["songs"])
 
@@ -131,6 +131,13 @@ def create_song(song_in: schemas.SongCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(song)
     return get_song_or_404(song.id, db)
+
+
+@router.post("/estimate-key", response_model=schemas.EstimateKeyResponse)
+def estimate_key_endpoint(request: schemas.EstimateKeyRequest):
+    sections_data = [s.model_dump() for s in request.sections]
+    original_key = estimate_key_from_sections(sections_data, capo=request.capo)
+    return {"original_key": original_key}
 
 
 @router.get("/{song_id}", response_model=schemas.SongResponse)

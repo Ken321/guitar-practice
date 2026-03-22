@@ -8,7 +8,6 @@ export default function SongList() {
   const [songs, setSongs] = useState<SongListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [searchQuery, setSearchQuery] = useState('')
   const [selectedSongIds, setSelectedSongIds] = useState<string[]>([])
   const [deletingSongIds, setDeletingSongIds] = useState<string[]>([])
 
@@ -78,13 +77,6 @@ export default function SongList() {
     })
   }
 
-  const filteredSongs = songs.filter(song => {
-    const q = searchQuery.toLowerCase()
-    return (
-      song.title.toLowerCase().includes(q) ||
-      song.artist.toLowerCase().includes(q)
-    )
-  })
   const selectedCount = selectedSongIds.length
   const isDeleting = deletingSongIds.length > 0
 
@@ -96,7 +88,7 @@ export default function SongList() {
           曲リスト
           {!loading && (
             <span style={{ fontSize: '14px', fontWeight: 'normal', color: '#999', marginLeft: '8px' }}>
-              ({filteredSongs.length}曲)
+              ({songs.length}曲)
             </span>
           )}
         </h1>
@@ -119,25 +111,6 @@ export default function SongList() {
         </button>
       </div>
 
-      {/* Search */}
-      <div style={{ marginBottom: '16px' }}>
-        <input
-          type="text"
-          placeholder="曲名・アーティスト名で検索..."
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
-          style={{
-            width: '100%',
-            padding: '10px 14px',
-            border: '1px solid #ddd',
-            borderRadius: '8px',
-            fontSize: '14px',
-            backgroundColor: 'white',
-            outline: 'none',
-          }}
-        />
-      </div>
-
       {/* Content */}
       {loading && (
         <div style={{ textAlign: 'center', padding: '48px', color: '#999' }}>
@@ -154,13 +127,13 @@ export default function SongList() {
         </div>
       )}
 
-      {!loading && !error && filteredSongs.length === 0 && (
+      {!loading && !error && songs.length === 0 && (
         <div style={{ textAlign: 'center', padding: '48px', color: '#999' }}>
-          {searchQuery ? '検索結果が見つかりませんでした' : '曲が登録されていません。新規作成から追加してください。'}
+          曲が登録されていません。新規作成から追加してください。
         </div>
       )}
 
-      {!loading && filteredSongs.length > 0 && (
+      {!loading && songs.length > 0 && (
         <div style={{
           backgroundColor: 'white',
           borderRadius: '8px',
@@ -208,7 +181,7 @@ export default function SongList() {
               </tr>
             </thead>
             <tbody>
-              {filteredSongs.map((song, idx) => {
+              {songs.map((song, idx) => {
                 const isSelected = selectedSongIds.includes(song.id)
 
                 return (
@@ -216,7 +189,7 @@ export default function SongList() {
                     key={song.id}
                     onClick={() => navigate(`/songs/${song.id}`)}
                     style={{
-                      borderBottom: idx < filteredSongs.length - 1 ? '1px solid #f0f0f0' : 'none',
+                      borderBottom: idx < songs.length - 1 ? '1px solid #f0f0f0' : 'none',
                       cursor: 'pointer',
                       transition: 'background-color 0.1s',
                       backgroundColor: isSelected ? 'var(--theme-color-soft)' : 'white',

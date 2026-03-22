@@ -6,14 +6,6 @@ import { COMMON_KEYS, transposeKeyName } from '../utils/degree'
 import SongEditor from '../components/SongEditor'
 
 type Step = 'form' | 'loading' | 'preview' | 'manual'
-type SearchMode = 'search' | 'url'
-
-const SEARCH_PROGRESS_MESSAGES = [
-  '検索条件を整理しています',
-  'U-フレットを検索しています',
-  '楽器.me も確認しています',
-  '取得したコードデータを整形しています',
-]
 
 const URL_PROGRESS_MESSAGES = [
   'URLを確認しています',
@@ -25,7 +17,6 @@ const URL_PROGRESS_MESSAGES = [
 export default function AddSong() {
   const navigate = useNavigate()
   const [step, setStep] = useState<Step>('form')
-  const [searchMode, setSearchMode] = useState<SearchMode>('search')
   const [title, setTitle] = useState('')
   const [artist, setArtist] = useState('')
   const [sourceUrl, setSourceUrl] = useState('')
@@ -53,22 +44,17 @@ export default function AddSong() {
         return Math.min(92, prev + increment)
       })
       setLoadingMessageIndex((prev) => {
-        const messages = searchMode === 'search' ? SEARCH_PROGRESS_MESSAGES : URL_PROGRESS_MESSAGES
-        return Math.min(prev + 1, messages.length - 1)
+        return Math.min(prev + 1, URL_PROGRESS_MESSAGES.length - 1)
       })
     }, 900)
 
     return () => window.clearInterval(intervalId)
-  }, [step, searchMode])
+  }, [step])
 
   const chartKey = useMemo(() => transposeKeyName(originalKey, -capo), [originalKey, capo])
 
   async function handleScrape() {
-    if (searchMode === 'search' && (!title.trim() || !artist.trim())) {
-      setError('曲名とアーティスト名を入力してください')
-      return
-    }
-    if (searchMode === 'url' && !sourceUrl.trim()) {
+    if (!sourceUrl.trim()) {
       setError('URLを入力してください')
       return
     }
@@ -76,9 +62,7 @@ export default function AddSong() {
     setStep('loading')
 
     try {
-      const result = searchMode === 'search'
-        ? await scrapeSong({ title: title.trim(), artist: artist.trim() })
-        : await scrapeSong({ url: sourceUrl.trim() })
+      const result = await scrapeSong({ url: sourceUrl.trim() })
       setScrapeResult(result)
       setEditableScrapedSections(result.sections)
       setCapo(result.detected_capo ?? 0)
@@ -203,92 +187,25 @@ export default function AddSong() {
       {(step === 'form' || step === 'loading') && (
         <div style={{ backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', padding: '24px' }}>
           <p style={{ color: '#555', marginBottom: '20px', fontSize: '14px' }}>
-            曲名とアーティスト名で検索するか、対応サイトのURLから直接コードデータを取得できます。
+            対応サイトのURLから直接コードデータを取得できます。
           </p>
 
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-            <button
-              onClick={() => { setSearchMode('search'); setError(null) }}
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ display: 'block', fontSize: '13px', color: '#666', marginBottom: '6px', fontWeight: '500' }}>
+              楽曲URL <span style={{ color: '#dc2626' }}>*</span>
+            </label>
+            <input
+              value={sourceUrl}
+              onChange={e => setSourceUrl(e.target.value)}
+              placeholder="例: https://tabs.ultimate-guitar.com/tab/... または https://www.ufret.jp/song.php?data=..."
               disabled={step === 'loading'}
-              style={{
-                padding: '10px 14px',
-                backgroundColor: searchMode === 'search' ? 'var(--theme-color)' : 'white',
-                color: searchMode === 'search' ? 'white' : '#555',
-                border: `1px solid ${searchMode === 'search' ? 'var(--theme-color)' : '#ddd'}`,
-                borderRadius: '6px',
-                fontSize: '14px',
-                fontWeight: '500',
-                cursor: step === 'loading' ? 'not-allowed' : 'pointer',
-              }}
-            >
-              曲名・アーティストで検索
-            </button>
-            <button
-              onClick={() => { setSearchMode('url'); setError(null) }}
-              disabled={step === 'loading'}
-              style={{
-                padding: '10px 14px',
-                backgroundColor: searchMode === 'url' ? 'var(--theme-color)' : 'white',
-                color: searchMode === 'url' ? 'white' : '#555',
-                border: `1px solid ${searchMode === 'url' ? 'var(--theme-color)' : '#ddd'}`,
-                borderRadius: '6px',
-                fontSize: '14px',
-                fontWeight: '500',
-                cursor: step === 'loading' ? 'not-allowed' : 'pointer',
-              }}
-            >
-              URLから追加
-            </button>
-          </div>
-
-          {searchMode === 'search' ? (
-            <>
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', fontSize: '13px', color: '#666', marginBottom: '6px', fontWeight: '500' }}>
-                  曲名 <span style={{ color: '#dc2626' }}>*</span>
-                </label>
-                <input
-                  value={title}
-                  onChange={e => setTitle(e.target.value)}
-                  placeholder="例: 夜に駆ける"
-                  disabled={step === 'loading'}
-                  onKeyDown={e => { if (e.key === 'Enter') handleScrape() }}
-                  style={{ width: '100%', padding: '10px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
-                />
-              </div>
-
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', fontSize: '13px', color: '#666', marginBottom: '6px', fontWeight: '500' }}>
-                  アーティスト名 <span style={{ color: '#dc2626' }}>*</span>
-                </label>
-                <input
-                  value={artist}
-                  onChange={e => setArtist(e.target.value)}
-                  placeholder="例: YOASOBI"
-                  disabled={step === 'loading'}
-                  onKeyDown={e => { if (e.key === 'Enter') handleScrape() }}
-                  style={{ width: '100%', padding: '10px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
-                />
-              </div>
-            </>
-          ) : (
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', fontSize: '13px', color: '#666', marginBottom: '6px', fontWeight: '500' }}>
-                楽曲URL <span style={{ color: '#dc2626' }}>*</span>
-              </label>
-              <input
-                value={sourceUrl}
-                onChange={e => setSourceUrl(e.target.value)}
-                placeholder="例: https://www.ufret.jp/song.php?data=..."
-                disabled={step === 'loading'}
-                onKeyDown={e => { if (e.key === 'Enter') handleScrape() }}
-                style={{ width: '100%', padding: '10px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
-              />
-              <div style={{ marginTop: '6px', fontSize: '12px', color: '#999' }}>
-                対応サイト: U-フレット、楽器.me
-              </div>
+              onKeyDown={e => { if (e.key === 'Enter') handleScrape() }}
+              style={{ width: '100%', padding: '10px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
+            />
+            <div style={{ marginTop: '6px', fontSize: '12px', color: '#999' }}>
+              対応サイト: Ultimate Guitar、U-フレット、楽器.me
             </div>
-          )}
+          </div>
 
           {error && (
             <div style={{ padding: '10px 12px', backgroundColor: '#fee2e2', color: '#dc2626', borderRadius: '6px', fontSize: '13px', marginBottom: '16px' }}>
@@ -299,10 +216,7 @@ export default function AddSong() {
           <div style={{ display: 'flex', gap: '8px' }}>
             <button
               onClick={handleScrape}
-              disabled={
-                step === 'loading' ||
-                (searchMode === 'search' ? (!title.trim() || !artist.trim()) : !sourceUrl.trim())
-              }
+              disabled={step === 'loading' || !sourceUrl.trim()}
               style={{
                 flex: 1,
                 padding: '12px',
@@ -315,7 +229,7 @@ export default function AddSong() {
                 cursor: step === 'loading' ? 'not-allowed' : 'pointer',
               }}
             >
-              {step === 'loading' ? '検索中...' : '検索・取得'}
+              {step === 'loading' ? '取得中...' : '取得'}
             </button>
             <button
               onClick={() => setStep('manual')}
@@ -351,7 +265,7 @@ export default function AddSong() {
                 />
               </div>
               <div style={{ fontSize: '11px', color: '#999' }}>
-                {(searchMode === 'search' ? SEARCH_PROGRESS_MESSAGES : URL_PROGRESS_MESSAGES)[loadingMessageIndex]}
+                {URL_PROGRESS_MESSAGES[loadingMessageIndex]}
               </div>
             </div>
           )}

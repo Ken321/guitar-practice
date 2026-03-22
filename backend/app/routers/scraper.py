@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 from ..schemas import ScrapeRequest, ScrapeResponse, SectionCreate, LineCreate, ChordPlacementCreate
 from scraper.ufrelet import UFretScraper
 from scraper.gakki_me import GakkiMeScraper
+from scraper.ultimate_guitar import UltimateGuitarScraper
 
 router = APIRouter(prefix="/scrape", tags=["scraper"])
 
@@ -55,6 +56,8 @@ def _get_scraper_for_url(url: str):
         return UFretScraper()
     if "gakki.me" in host:
         return GakkiMeScraper()
+    if "ultimate-guitar.com" in host:
+        return UltimateGuitarScraper()
     return None
 
 
@@ -65,7 +68,7 @@ async def scrape_song(request: ScrapeRequest):
         if not scraper:
             raise HTTPException(
                 status_code=400,
-                detail="対応しているURLは U-フレット と 楽器.me のみです",
+                detail="対応しているURLは U-フレット、楽器.me、Ultimate Guitar のみです",
             )
 
         try:
@@ -80,31 +83,7 @@ async def scrape_song(request: ScrapeRequest):
             detail=f"Could not find chord data from URL: {request.url}"
         )
 
-    if not request.title or not request.artist:
-        raise HTTPException(
-            status_code=422,
-            detail="曲名とアーティスト名、またはURLを指定してください",
-        )
-
-    # Try U-フレット first
-    try:
-        scraper = UFretScraper()
-        result = await scraper.scrape(request.title, request.artist)
-        if result and result.get("sections"):
-            return _build_scrape_response(result)
-    except Exception as e:
-        print(f"UFret scraper failed: {e}")
-
-    # Fallback to 楽器.me
-    try:
-        scraper = GakkiMeScraper()
-        result = await scraper.scrape(request.title, request.artist)
-        if result and result.get("sections"):
-            return _build_scrape_response(result)
-    except Exception as e:
-        print(f"GakkiMe scraper failed: {e}")
-
     raise HTTPException(
-        status_code=404,
-        detail=f"Could not find chord data for '{request.title}' by '{request.artist}'"
+        status_code=422,
+        detail="URLを指定してください",
     )
