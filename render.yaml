@@ -2,8 +2,6 @@ services:
   - type: web
     name: guitar-practice-api
     runtime: docker
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
     healthCheckPath: /
     envVars:
       - key: DATABASE_URL
